@@ -1,0 +1,25 @@
+# Copied to a target repo as `.hadolint.yaml`. Presence is the opt-in — without
+# it hadolint does not lint this repo's Dockerfiles. See projects/tooling.md.
+#
+# Deliberately near-empty: an unconfigured hadolint reports mostly true
+# positives, so the useful default is "all rules on". Add ignores here as you
+# earn them, one at a time, each with the reason.
+
+ignored:
+  # The pin-versions family (apt / pip / npm / apk). One rationale, four rules:
+  # unpinned installs only matter if this repo ships reproducible images —
+  # drop the lines to turn them back on when it does. DL3008 was the first,
+  # ignored 2026-08-01; the siblings joined 2026-08-02 because they fire on the
+  # identical pattern and were only absent for lack of a pip/apk Dockerfile.
+  - DL3008 # apt-get install <pkg>=<ver>
+  - DL3013 # pip install <pkg>==<ver>
+  - DL3016 # npm install <pkg>@<ver>
+  - DL3018 # apk add <pkg>=<ver>
+
+  # "Multiple consecutive RUN instructions. Consider consolidation." A RUN per
+  # step is often the deliberate choice — layer caching — and consolidating is
+  # an image-size tweak, not a correctness fix. Measured 2026-08-02: the one
+  # finding hadolint raised on an ordinary multi-step build.
+  - DL3059
+
+failure-threshold: warning

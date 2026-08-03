@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "playwright-sandboxing-tutorial": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--isolated"]
+    }
+  }
+}

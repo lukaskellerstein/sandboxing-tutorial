@@ -1,0 +1,24 @@
+# Secrets — never commit. A committed `.env.example` is the template; the real
+# values come from ~/.secrets/secrets.enc.yaml via direnv.
+.env
+.envrc
+*.key
+*.pem
+*.agekey
+kubeconfig
+*.kubeconfig
+
+# Claude Code machine-local overrides
+.claude/settings.local.json
+
+# Python
+__pycache__
+__pycache__/
+*.pyc
+.venv/
+.python-version
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
