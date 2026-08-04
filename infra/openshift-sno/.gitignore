@@ -1,0 +1,15 @@
+# NEVER commit secrets or generated cluster auth
+cfg/
+*.ign
+auth/
+kubeconfig
+*kubeconfig
+kubeadmin-password
+core_key
+core_key.pub
+*.pem
+*.key
+pull-secret*.json
+oc
+oc-linux
+openshift-install

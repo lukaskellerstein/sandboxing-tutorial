@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kata-verify
+  namespace: default
+spec:
+  runtimeClassName: kata
+  restartPolicy: Never
+  containers:
+  - name: p
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    command: ["/bin/sh","-c"]
+    args:
+    - |
+      echo "KERNEL=$(uname -r)"
+      echo "DMI_PRODUCT=$(cat /sys/class/dmi/id/product_name 2>/dev/null)"
+      echo "DMI_VENDOR=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null)"
+      echo "NPROC=$(nproc)"
+      echo "VIRTIO_DEVS=$(ls /sys/bus/virtio/devices 2>/dev/null | wc -l)"
+      echo "MEM_TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')"
+      sleep 3
