@@ -1,0 +1,31 @@
+# SNO install-config template. Fill the placeholders, then:
+#   openshift-install --dir=cfg create single-node-ignition-config
+# Placeholders:
+#   __MACHINE_CIDR__  the node's real public subnet, e.g. 62.210.88.0/24 (from `ip -4 addr` in rescue/base)
+#   __PULL_SECRET__   the Red Hat pull secret JSON, collapsed to ONE line
+#   __SSH_PUBKEY__    a throwaway public key for the RHCOS `core` user
+apiVersion: v1
+baseDomain: spike.lab
+metadata:
+  name: sno
+compute:
+  - name: worker
+    replicas: 0
+controlPlane:
+  name: master
+  replicas: 1
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  serviceNetwork:
+    - 172.30.0.0/16
+  machineNetwork:
+    - cidr: __MACHINE_CIDR__
+platform:
+  none: {}
+bootstrapInPlace:
+  installationDisk: /dev/sda
+pullSecret: '__PULL_SECRET__'
+sshKey: '__SSH_PUBKEY__'

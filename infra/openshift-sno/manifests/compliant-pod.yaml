@@ -1,0 +1,19 @@
+# SCC demo — the compliant pod that admission accepts (same 'rogue' SA).
+# It is admitted and assigned the restricted-v2 SCC:
+#   oc -n scctest --as=system:serviceaccount:scctest:rogue create -f compliant-pod.yaml
+#   oc -n scctest get pod compliant -o jsonpath='{.metadata.annotations.openshift\.io/scc}'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compliant
+spec:
+  serviceAccountName: rogue
+  containers:
+    - name: c
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      command: ["sleep", "30"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }

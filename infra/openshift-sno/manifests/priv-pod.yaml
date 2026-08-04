@@ -1,0 +1,17 @@
+# SCC demo — the over-privileged pod that admission MUST reject.
+# Create it AS the restricted 'rogue' SA (which has `edit` RBAC but only the
+# restricted-v2 SCC), so the only thing that can block it is SCC admission:
+#   oc -n scctest --as=system:serviceaccount:scctest:rogue create -f priv-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rogue-privileged
+spec:
+  serviceAccountName: rogue
+  containers:
+    - name: c
+      image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+      command: ["sleep", "60"]
+      securityContext:
+        privileged: true
+        runAsUser: 0
