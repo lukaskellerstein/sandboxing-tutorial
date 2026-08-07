@@ -13,32 +13,45 @@ can see what you intend to verify. Example:
 
 > **Definition of Done for this lesson:**
 >
-> - [ ] `uv sync` resolves without error in the leaf
-> - [ ] `uv run python main.py` completes and prints the expected sections
+> - [ ] `./run.sh` provisions the box, the lesson runs on it, the box is destroyed
+> - [ ] `check.sh`'s boundary assertions passed — read from inside, not from the flag
+> - [ ] The lesson printed its expected sections and wrote `results/<lesson>.json`
+> - [ ] `report.html` + `report.json` exist in the lesson's folder
 > - [ ] The probe results differ from the previous rung in the way the lesson claims
 > - [ ] The README's step-by-step matches what the run actually printed
-> - [ ] Containers/pods the run created are cleaned up
+> - [ ] **Independently verified** that no server, volume or IP is left in the account
 
-## 4b. Test
+## 4b. Test — one lesson, one box, every time
 
-**Lesson / Python changes** — run the affected lesson end-to-end. There is no
-repo-wide test suite; running it *is* the test.
+**Provision → run → validate → investigate on failure → destroy.** Per lesson, no
+steps skipped, no exceptions. There is no repo-wide test suite; running the lesson
+on its own disposable box *is* the test.
+
+That whole cycle is one command, and it destroys the box even when the lesson fails:
 
 ```bash
 cd tutorial/<lesson>
-uv sync
-uv run python main.py
+./run.sh                 # provision -> run -> destroy
+./run.sh --keep          # ...leave the box up, for investigating a failure
 ```
 
-Before that, confirm the environment is actually up — a lesson failing because
-the container engine is stopped is not a lesson bug:
+> [!danger]
+> **Never "quickly test" a lesson by running `main.py` locally.** It writes
+> `results/<lesson>.json` from whatever machine you are on, silently replacing a
+> real measurement with a laptop stand-in — and the next comparison is then a
+> laptop against a VM, which is precisely the dishonesty this repo exists to
+> avoid. It has already happened once. If you do it by accident, say so and
+> re-run `./run.sh` to restore the card.
 
-```bash
-podman machine list && podman ps      # podman is the preferred engine
-docker ps                             # only for lessons that require Docker
-kubectl config current-context        # k8s lessons — CHECK THIS BEFORE APPLYING
-kubectl get runtimeclass              # is runsc / kata actually registered?
-```
+**Capture the full output.** Redirect the whole run to a file and grep the file for
+display; never pipe the run itself through `grep`. A filtered pipeline throws away
+the traceback body, and a failure you cannot diagnose costs another full provision
+to reproduce. That has also already happened once.
+
+**On failure, investigate before re-running.** A lesson that passes on the second
+attempt with unchanged code is not fixed, it is intermittent — say so rather than
+reporting the green run. Use `./run.sh --keep` to hold the box, then `infra/ssh.sh
+<lesson>` to inspect it, and destroy it with `infra/down.sh <lesson>` when done.
 
 What to actually check, beyond "it exited 0":
 
@@ -55,10 +68,24 @@ What to actually check, beyond "it exited 0":
 - **The console output.** Lessons teach by printing; if section headers and
   progress lines are missing or wrong, the lesson is broken even though the code
   ran.
+- **The reports exist.** `report.html` and `report.json` in the lesson's own
+  folder, plus `results/<lesson>.json`. If the lesson ran but no report appeared,
+  the run is not done — the render step is part of the lesson, not a nicety.
 - **The README matches the run.** If you changed behaviour, the step-by-step and
   any sample output in `README.md` are now stale.
-- **Clean up.** Remove containers and pods the run created. Never delete a
-  cluster, a volume, or an image this repo did not build.
+- **The box is gone — verified against the account, not against the script.**
+  `./run.sh` prints `destroyed, billing stopped` *before* the API has finished, so
+  its own output is not proof. Ask the account:
+
+  ```bash
+  scw instance server list zone=fr-par-1     # servers
+  scw instance volume list zone=fr-par-1     # a volume outlives a badly-deleted server
+  scw instance ip list zone=fr-par-1         # so does a flexible IP
+  ```
+
+  All three must be empty. Checking only the server list is how an orphaned volume
+  bills quietly for a month. Never delete a cluster, volume or image this repo did
+  not create.
 
 **Dashboard / UI checks** — some lessons surface results in a web UI (an MLflow
 or Langfuse instance, a cluster dashboard). There is **no repo-wide dev server**;

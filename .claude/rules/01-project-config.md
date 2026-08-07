@@ -9,26 +9,28 @@ description: Project configuration — architecture, paths, dev environment
      bullet that does not apply rather than leaving a placeholder. -->
 
 > [!important]
-> **This repo is scaffolding as of 2026-08-03.** Tooling, `.claude/` and the
-> README exist; `syllabus.md` and every lesson do not. Lines below that describe
-> lesson layout are the *convention to follow when they are written*, not a
-> description of files on disk — they are marked as such. Update this file the
-> moment that stops being true.
+> **Chapters 1–2 are built as of 2026-08-06.** `syllabus.md` and lessons 01–05
+> exist, as does `infra/` with a Terraform-provisioned box per lesson. Lessons
+> **01–05 are all green end-to-end on Scaleway VMs**, verified 2026-08-06; lesson
+> 05's old `openshell sandbox exec` hang is fixed by `wait_ready()` polling for
+> `Ready` before the first `exec`. Chapters 3–5 are still unwritten. Update this file
+> the moment any of that stops being true.
 
 - **Project**: sandboxing-tutorial — a hands-on tutorial on sandboxing agentic
   workloads: running an AI agent and the code it generates behind a real
   isolation boundary, on local containers and on Kubernetes
 - **Architecture**: independently-runnable lesson leaves. No application; the
-  lessons *are* the deliverable. **Currently zero leaves exist.**
-- **Structure**: `tutorial/` (empty, holds the lesson leaves), `syllabus.md`
-  (**not written yet** — it is the source of truth for the lesson list and
-  ordering, and comes before any lesson directory)
+  lessons *are* the deliverable. **Five leaves exist (lessons 01–05).**
+- **Structure**: `tutorial/` (the lesson leaves), `syllabus.md` (the source of
+  truth for the lesson list and ordering — it comes before any lesson directory),
+  `infra/` (Terraform + substrate scripts for the per-lesson disposable box)
 - **Build**: nothing is built. `uv sync` in a leaf resolves that leaf's
   dependencies against its own `.venv`.
-- **Run locally** *(convention)*: `cd <lesson> && uv sync && uv run python main.py`
-  → console output
-- **Test**: no repo-wide suite. Running the lesson end-to-end against a live
-  container engine *is* the test — see `06-testing.md`.
+- **Run a lesson**: `cd tutorial/<lesson> && ./run.sh` — provisions its Scaleway VM,
+  runs the lesson there, destroys the box (including on failure), and writes
+  `report.html` + `report.json` beside the lesson
+- **Test**: no repo-wide suite. That same command *is* the test: provision → run →
+  validate → investigate on failure → destroy, per lesson — see `06-testing.md`.
 - **Key dependencies**: none declared yet. Per-lesson extras go in each leaf's
   own `pyproject.toml`.
 - **Package manager**: `uv`, always. Never `pip install`.
