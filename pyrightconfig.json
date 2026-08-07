@@ -1,0 +1,37 @@
+{
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": "none",
+  "exclude": ["**/.venv", "**/node_modules", "**/__pycache__"],
+  "executionEnvironments": [
+    {
+      "root": "tutorial/lesson-01-no-sandbox",
+      "extraPaths": [
+        "tutorial/lesson-01-no-sandbox/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-02-container",
+      "extraPaths": [
+        "tutorial/lesson-02-container/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-03-container-gvisor",
+      "extraPaths": [
+        "tutorial/lesson-03-container-gvisor/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-04-container-kata",
+      "extraPaths": [
+        "tutorial/lesson-04-container-kata/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-05-container-openshell",
+      "extraPaths": [
+        "tutorial/lesson-05-container-openshell/.venv/lib/python3.12/site-packages"
+      ]
+    }
+  ]
+}

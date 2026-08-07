@@ -1,0 +1,26 @@
+#cloud-config
+# The unprivileged user every lesson runs as.
+#
+# This is not tidiness. A Scaleway VM logs in as root, and lesson 2's claim is a ROOTLESS container —
+# run as root, "rootless podman" is a contradiction and the lesson silently measures something else.
+# Elastic Metal happens to log in as `ubuntu`, which is why this gap only appears on VMs.
+#
+# Nothing else is installed here on purpose: the substrates in infra/substrates/ own the engines and
+# runtimes, so lesson 1 genuinely receives a bare box and each lesson's stack is visible in one file.
+hostname: ${hostname}
+users:
+  - name: agent
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+runcmd:
+  # Linger keeps /run/user/<uid> and the rootless podman socket alive across our non-interactive
+  # ssh logins. Without it the socket dies with the session and crun starts failing with
+  # "sd-bus call: Interactive authentication required", which reads like a permissions bug.
+  #
+  # Deliberately NOT `systemctl --machine=agent@.host --user ...` here: that needs systemd-container,
+  # which a cloud image does not ship, so the runcmd fails and takes cloud-init's whole final stage
+  # down with it. The substrate that actually needs the socket enables it as the user instead.
+  - [loginctl, enable-linger, agent]

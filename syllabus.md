@@ -20,9 +20,9 @@ happened.
 | # | What the rogue agent tries | First fully closed by |
 | :-- | :-- | :-- |
 | 1 | Read credentials — planted `~/.ssh/id_rsa`, `~/.aws/credentials`, `.env` | container (fs) |
-| 2 | Exfiltrate them to our listener | container (egress) |
+| 2 | Exfiltrate them to our listener | container (no egress) → **OpenShell** once egress is needed |
 | 3 | Plant a backdoor — `~/.bashrc`, cron, `authorized_keys` | container (read-only / ephemeral) |
-| 4 | Reach the internal network and the cloud-metadata endpoint | container / NetworkPolicy |
+| 4 | Reach the internal network and the cloud-metadata endpoint | container (no egress) → **OpenShell** / NetworkPolicy once egress is needed |
 | 5 | Install a malicious package — typosquat, `setup.py` runs at install | container (no egress) → **OpenShell** once egress is needed |
 | 6 | Fetch a second stage and open a reverse shell — `curl … \| sh`, then bind | container (no egress + no inbound) → **OpenShell** once egress is needed |
 | 7 | Resource exhaustion — fork bomb, memory, disk (**bounded**, see below) | container (cgroups / limits) |
@@ -34,6 +34,45 @@ every single one succeeds. Each later lesson runs the identical suite and flips
 some rows from *succeeded* to *blocked* — and, crucially, **leaves others still
 succeeding.** The rows still green at the end of a lesson are the reason the next
 lesson exists. You never have to take a word of it on trust.
+
+### Two network modes, because the network is the whole argument
+
+Four rows above say *"container (no egress) → OpenShell once egress is needed"*,
+and that qualifier is doing more work than any other phrase in this document. So
+lessons 2, 3 and 4 do not assert it — they **measure it**, running the same suite
+twice behind the same boundary:
+
+| Mode | The container's network | What it represents |
+| :-- | :-- | :-- |
+| `egress-off` | `--network none` | the number a container scoreboard usually quotes |
+| `network-on` | the engine's ordinary network | an agent that must reach a model API |
+
+Everything else is byte-identical between the two runs, so a row that differs
+differs because of the network and nothing else. Measured on a Scaleway VM:
+
+| Rung | egress-off | network-on |
+| :-- | :-- | :-- |
+| 1 no sandbox | — | 3/13 |
+| 2 container | 11/13 | **7/13** |
+| 3 + gVisor | 13/13 | **9/13** |
+| 4 + Kata | 11/13 | **7/13** |
+| 5 + OpenShell | — | 16/19 |
+
+**`network-on` is the headline everywhere in this repo**, because an agent that
+cannot reach a model API is not an agent, and `--network none` closes attacks 2,
+4, 5 and 6 for free. Lessons 1 and 5 have one mode by construction: lesson 1 has
+no boundary to switch off, and OpenShell's sandbox is online and policed rather
+than offline.
+
+Two things fall out of that table, and both are the point:
+
+- **Attacks 2, 4, 5 and 6 read `SUCCEEDED` on the container, on gVisor *and* on
+  Kata.** None of the three reads HTTP, so a stronger *kernel* boundary buys
+  nothing on that axis. Only lesson 5 closes them.
+- **Kata and the plain container both score 7/13 — for opposite reasons.** Kata
+  blocks `kernel_identity` and `sys_module_count` and reopens `bpf` and
+  `io_uring_setup` (its guest kernel is less hardened than the node's); the
+  container does the exact reverse. Read the matrix, never the count.
 
 That is also why every lesson gets a **fresh, disposable machine**: attack 7 takes
 the host down. Real damage on a box that is deleted minutes later.
@@ -133,8 +172,8 @@ comparable.
 
 ## Where this runs, and why not on your laptop
 
-**Bare-metal Linux on Scaleway Elastic Metal, provisioned per lesson and destroyed
-after.** A deliberate reversal of the obvious choice, for four measured reasons.
+**A disposable Scaleway box per lesson, provisioned by Terraform and destroyed
+after.** A deliberate reversal of the obvious choice, for three measured reasons.
 
 **1. A fresh machine per lesson is what makes the demonstration honest.** The rogue
 agent installs a backdoor, opens a reverse shell and exhausts resources — real
@@ -146,25 +185,44 @@ attacks" — the fresh box is about a clean slate and isolation, not about
 surviving genuine wreckage.)
 
 **2. On macOS the comparison is quietly dishonest.** Podman runs containers inside
-a Linux VM, so the chapter-2 "plain container" is *already* VM-isolated from your
-real machine. The baseline is stronger than the lesson claims. On bare metal a
-container is genuinely namespaces on the host kernel, so *"a kernel exploit escapes
-this"* is literally true of the thing you just ran.
+a Linux VM *you did not ask for and the lesson does not mention*, so the chapter-2
+"plain container" is already VM-isolated from your real machine and the baseline is
+stronger than the lesson claims. On a Linux box you provisioned, a container is
+namespaces on the kernel you just measured, and *"a kernel exploit escapes this"* is
+literally true of the thing you ran.
 
 **3. Kata cannot run on an Apple Silicon Mac at all** — measured, see below.
 
-**4. OpenShift sandboxed containers require bare metal**, so chapter 4 is measured
-rather than described.
+### VM or bare metal — measured per lesson, not assumed
 
-| Used by | Offer | Spec | Price |
+Chapters 1–3 and 5 run on **VMs** (Scaleway's *Instances* product). Chapter 4 —
+OpenShift sandboxed containers — genuinely requires **Elastic Metal**, and is the
+only place in the tutorial that does.
+
+| Used by | Kind | Offer | Price |
 | :-- | :-- | :-- | --: |
-| Chapters 1–3, 5 — **one box per lesson** | `EM-A116X-SSD` | Xeon E3, 4c, 32 GB | **€0.077/hr** |
-| Chapter 4 — **one box for all four lessons** | `EM-B112X-SSD` | 12c/24t, 192 GB | **€0.263/hr** |
+| Lessons 1–3 — one box per lesson | VM | `PLAY2-NANO` (2 vCPU, 4 GB) | **€0.028/hr** |
+| Lessons 4–5 — one box per lesson | VM | `PLAY2-MICRO` (4 vCPU, 8 GB) | **€0.055/hr** |
+| Chapter 4 — one box for all four lessons | bare metal | `EM-B112X-SSD` (12c/24t, 192 GB) | **€0.263/hr** |
 
-Chapter 4 shares a box because installing single-node OpenShift takes far longer
+Chapters 1–3 used to take metal too, on the argument that only metal makes "a
+container shares *this* kernel" literally true. That argument was tested rather
+than kept (2026-08-06, § *Verified on this hardware*): lesson 1's entire scorecard
+is **row-for-row identical** on a VM, gVisor still reports its own kernel, and Kata
+still boots a real guest because a Scaleway VM exposes `/dev/kvm` and
+`/dev/vhost-vsock`. What metal cost was not money — it was a default **quota of 2**,
+per-offer stock, and a 10–15 minute OS install per box against under a minute for a
+VM.
+
+The one claim metal did buy is now gone and is not worth buying back: on a VM there
+*is* a hypervisor underneath, so "nothing beneath this kernel" is false. Escaping the
+container still gives you the whole machine, which is the claim lessons 1–3 actually
+make.
+
+Chapter 4 shares its box because installing single-node OpenShift takes far longer
 than a lesson does; re-installing it four times would be absurd. Everywhere else,
 `up.sh <lesson>` gives you a clean machine and `down.sh` destroys it. Working
-through the whole tutorial costs roughly **€2–3**.
+through chapters 1–3 costs well under **€1**.
 
 > [!warning]
 > **The honest cost of this decision:** a Scaleway account is a prerequisite from
@@ -251,6 +309,32 @@ No MLflow, no Langfuse. Every lesson prints its scorecard and appends it to
 `results/<lesson>.json` (gitignored). **Lesson 14 renders the final table from
 those files and never from hand-entered numbers.**
 
+Reporting is **two tiers**, and the split is deliberate:
+
+1. **Per lesson.** `infra/report/render.py <lesson>` writes `report.html` + `report.json`
+   into that lesson's own folder, covering **that lesson only**. It never reads another
+   lesson's card, so a lesson's report is final the moment the lesson finishes and can
+   never go stale because a later lesson ran. Each lesson's `main.py` produces it
+   automatically.
+2. **Overall.** `infra/report/overall.py` reads every `tutorial/lesson-*/report.json` and
+   writes `results/overall.html` — the ladder as a matrix plus what changed rung by rung.
+   Run it whenever you want the comparison; it is a view, not a result.
+
+The renderers live in `infra/` rather than in a leaf for the same reason the leaves
+duplicate `scorecard.py` and these do not: one HTML template copied five times would
+drift. They read only the JSON the lessons already write, so no lesson depends on them.
+
+`overall.py` refuses to compare quietly across machines: if two rungs recorded different
+`node_kernel` values it says so, because then a row that "changed" could be the hardware
+rather than the boundary.
+
+Wording, kept deliberately blunt: an attack is **BLOCKED** or it **SUCCEEDED**. Rows that
+only measure something are **INFO** and are never scored.
+
+[`ATTACKS.md`](ATTACKS.md) is the prose companion: what each probe does, why an
+attacker would want it, and what the reading means. It is written for someone who has
+not read this syllabus.
+
 ### Engine policy
 
 **Podman for the plain, gVisor and OpenShell rungs** — on Linux it is a full local
@@ -264,31 +348,36 @@ lesson says so and says why. **No lesson requires Docker.**
 
 ```bash
 cd infra
-cp .env.example .env
-./up.sh lesson-02        # fresh box + every substrate that lesson needs
-./check.sh               # asserts each boundary from the INSIDE, not from the flag passed
-./down.sh                # destroy. this is what keeps the tutorial cheap
+./up.sh --list                       # every lesson's box, straight out of terraform/lessons.json
+./up.sh   lesson-02-container        # terraform apply + substrates + assert the boundary
+./run.sh  lesson-02-container        # run the lesson there, fetch its scorecard
+./down.sh lesson-02-container        # destroy. this is what keeps the tutorial cheap
+./down.sh --all                      # destroy everything, then sweep for orphans
 ```
 
 ```text
 infra/
-├── up.sh · down.sh · check.sh · ssh.sh
-├── provision/
-│   ├── lesson-box.sh          EM-A116X-SSD, one per lesson, disposable
-│   └── openshift-box.sh       EM-B112X-SSD, shared by chapter 4
+├── up.sh · run.sh · down.sh · check.sh · ssh.sh
+├── terraform/
+│   ├── lessons.json            THE per-lesson hardware table — the only copy. Terraform reads it
+│   │                           with jsondecode(), lib.sh reads it with jq.
+│   └── modules/lesson-box/     one module, both products (vm | baremetal) + the cloud-init user
 ├── substrates/                 all run ON the provisioned box
 │   ├── 10-podman.sh
 │   ├── 20-runsc.sh            gVisor
 │   ├── 30-containerd-kata.sh  containerd + nerdctl + kata-static
 │   ├── 40-openshell.sh        OpenShell (pinned)
-│   ├── 50-k8s.sh              k3s/minikube + a policy-enforcing CNI
+│   ├── 50-nat-vm.sh           the NAT'd guest lesson 5's gateway requires
 │   ├── 60-k8s-gvisor.sh · 70-k8s-kata.sh · 80-k8s-openshell.sh
 │   └── 90-openshift-sno.sh    single-node OpenShift + sandboxed containers operator
-├── compose.yaml               LiteLLM gateway — runs on the box
 └── images/agent/              THE agent image: 4 frameworks + entrypoint + attack suite
 ```
 
-`down.sh` is not housekeeping — it is what keeps this tutorial a €2 tutorial.
+`down.sh` is not housekeeping — it is what keeps this a sub-€1 tutorial. It works
+two ways on purpose: Terraform destroys what it created, and a `sbx-*` name sweep
+then catches anything Terraform cannot know about — a box made outside it, or one
+whose state entry was lost. It also reports detached volumes and unattached IPs,
+which keep billing after their server is gone and are invisible in a server list.
 `up.sh` prints the running hourly cost every time it is invoked.
 
 `check.sh` exists because of this repo's characteristic silent failure: a lesson
@@ -378,29 +467,38 @@ next.**
 
 | # | Lesson | Duration | What it closes |
 | :-- | :-- | :-- | :-- |
-| 2 | `lesson-02-container` | 60 min | attacks 1–4, 7 (and 5–6 only by killing all egress) |
+| 2 | `lesson-02-container` | 60 min | attacks 1, 3, 7 — and 2, 4, 5, 6 only by killing all egress |
 | 3 | `lesson-03-container-gvisor` | 45 min | attack 8 |
 | 4 | `lesson-04-container-kata` | 60 min | attack 8, keeping Landlock |
-| 5 | `lesson-05-container-openshell` | 75 min | attacks 5, 6 and 9 — selectively |
+| 5 | `lesson-05-container-openshell` | 75 min | attacks 2, 4, 5, 6 and 9 — selectively, with the network still on |
 
 **`lesson-02-container`** — the single biggest jump in the tutorial. Rootless
-container, egress scoped to the gateway, `--cap-drop ALL`, `no-new-privileges`,
-non-root, `--read-only` plus a small tmpfs, memory / pids / CPU / storage limits,
-hard timeout, one throwaway container per run. Most attacks die here — but read the
-scorecard carefully, because three survive and they are the whole rest of the
-tutorial. **Attack 8 is untouched** — same kernel, same 200-plus modules, `bpf()`
-still works. **Attack 9 is untouched** — the container blocked things and forgot
-them. And **attacks 5–6 die only because egress is fully off**: a real agent needs
-*some* network (the model gateway, perhaps GitHub), and the moment you allow any,
-blanket on/off cannot tell a typosquat-install from a legitimate `GET` — which is
-lesson 5's opening. Also covers the two problems the host never had: reaching the
-gateway from inside, and the nesting problem.
+container, `--cap-drop ALL`, `no-new-privileges`, non-root, `--read-only` plus a
+small tmpfs, memory / pids / CPU / storage limits, hard timeout, one throwaway
+container per run. Most attacks die here — but read the scorecard carefully,
+because what survives is the whole rest of the tutorial. **Attack 8 is untouched**
+— same kernel, same 200-plus modules, `bpf()` still works. **Attack 9 is
+untouched** — the container blocked things and forgot them.
+
+And then Part 4 turns the network on, which is where the lesson earns its place:
+the score drops from **11/13 to 7/13** and attacks 2, 4, 5 and 6 all come back.
+Not because the container got weaker — the hardening is byte-identical — but
+because a container's only network verdict is on or off, and an agent needs
+*some* network (the model gateway, perhaps GitHub). Blanket on/off cannot tell a
+typosquat-install from a legitimate `GET`, and neither gVisor nor Kata will help,
+because neither reads HTTP. That is lesson 5's opening, measured here rather than
+promised. Also covers the two problems the host never had: reaching the gateway
+from inside, and the nesting problem.
 
 **`lesson-03-container-gvisor`** — one word different: `--runtime runsc`. Attack 8
 collapses: `/sys/module` empties, `bpf()` and `io_uring` return `ENOSYS`, the
 kernel identifies as gVisor's own. Corrects the widespread claim that gVisor needs
 KVM — its default **systrap** platform uses `seccomp-bpf`. Measures the syscall tax
-honestly (real on syscalls, ≈nothing on compute). Attacks 5 and 9 still succeed:
+honestly (real on syscalls, ≈nothing on compute). Its Part 4 repeats lesson 2's
+network experiment under `runsc` and gets the same answer — **13/13 falls to
+9/13** — with not one kernel row moving. gVisor's boundary is the syscall
+interface: it holds attack 8 exactly as before, and it never had an opinion about
+HTTP. Attacks 2, 4, 5, 6 and 9 still succeed once the agent is online, because
 gVisor has no idea *which binary* made a request and keeps no record.
 
 **`lesson-04-container-kata`** — the same result as gVisor by a completely
@@ -411,11 +509,20 @@ cost is precisely the argument for chapter 3, where the cluster already runs
 containerd and Kata becomes one field. The difference that matters later: **Kata
 keeps Landlock, gVisor drops it.**
 
+Its Part 4 is the sharpest version of the whole tutorial's argument. The
+*strongest* kernel boundary on this ladder — a separate guest kernel in a separate
+VM — drops from **11/13 to 7/13** the moment the agent has a network, reopening
+exactly the rows a plain container reopens. A VM per container buys attack 8. It
+does not buy attacks 2, 4, 5 or 6, and no amount of kernel isolation will.
+
 **`lesson-05-container-openshell`** — the survivors that a container could only kill
 by killing all network, plus the one it could never kill. The motivating scenario
 is lesson 1's **web injection**, now made containable: a browsing agent *must* have
 egress to read pages, so the previous rungs faced a false choice — turn network off
-and break the agent, or leave it on and let the injected payload exfiltrate.
+and break the agent, or leave it on and let the injected payload exfiltrate. That
+choice is not asserted here, it is on the scoreboard: lessons 2, 3 and 4 each run
+both ways, and each loses attacks 2, 4, 5 and 6 the moment the network comes on.
+Lesson 5 is the first rung that keeps them closed **with the network still on**.
 OpenShell runs the agent under a declarative policy on ordinary runc with egress
 **left on** but **per-binary and method-aware**: the agent still `GET`s the sites it
 needs, while the injected `POST` to the attacker, the `pip` install from a
@@ -579,6 +686,53 @@ is run.
 ## Verified on this hardware (2026-08-04)
 
 Measured, not assumed. Re-verify before contradicting any of it.
+
+### Scaleway VMs carry lessons 1–5 (2026-08-06) — why metal was dropped
+
+Three throwaway VMs, `fr-par-1`, Ubuntu 24.04, running this repo's own substrates
+and lessons unmodified. Total cost of the exercise ≈ €0.20.
+
+**Lessons 1–3 — `PLAY2-NANO`, €0.028/hr.** Lesson 1's scorecard compared against the
+`EM-A116X-SSD` run recorded in `results/lesson-01.json`:
+
+```text
+all 17 findings: IDENTICAL BLOCKED/REACHED on VM and on metal
+rootless podman : Rootless=true, container kernel == node kernel   (lesson 2 holds)
+gVisor          : 4.19.0-gvisor                                    (lesson 3 holds)
+node hardening  : unprivileged_bpf_disabled=2, perf_event_paranoid=4, kptr_restrict=1
+```
+
+Only patch level and timings moved (`sys_module_count` 195 → 178, `syscall_ms`
+32.8 → 43.9). One gap the VM exposes and metal hid: a Scaleway VM logs in as
+**root**, and lesson 2's claim is a *rootless* container — so the box must create an
+unprivileged user. Terraform's cloud-init does, and that is why it exists.
+
+**Lesson 4 — `PLAY2-MICRO`, €0.055/hr. Kata works on a VM:**
+
+```text
+cpu              : AMD EPYC 7543, svm, kvm_amd.nested=1
+/dev/kvm         : present      /dev/vhost-vsock : present
+kata-runtime     : "System is capable of running Kata Containers"
+node kernel      : 6.8.0-106-generic
+KATA container   : 6.18.35            <- the same guest kernel metal recorded
+guest sysctl     : unprivileged_bpf_disabled=0  vs node 2   <- lesson 4's surprise, reproduced
+```
+
+The Kata stack needs **40 GB** of root volume: a VM's default is 8 GB usable and the
+`kata-static` unpack dies with `No space left on device` at 9.3 GB. Metal's large
+local SSD is why nobody had met that.
+
+**Lesson 5 — the NAT guest boots on a VM.** `virsh domstate` = `running`, lease on
+`virbr0`, primary address `192.168.122.53/24` — a private address on the
+default-route interface, which is the entire requirement. The older *"the guest must
+be L1, so lesson 5 needs metal"* note was wrong: that symptom (grub loads, kernel
+resets forever) was later traced to **BIOS-vs-UEFI** and seen on metal too, which is
+why `50-nat-vm.sh` passes `--boot uefi`.
+
+**What metal actually cost**, and the real reason for the switch: `ELASTIC_METAL`
+has a default quota of **2**, so four metal lessons could not be up at once and the
+reader had to work in batches; offers go in and out of stock; and each box takes
+10–15 minutes to install against under a minute for a VM.
 
 ### Scaleway Elastic Metal — Kata works
 

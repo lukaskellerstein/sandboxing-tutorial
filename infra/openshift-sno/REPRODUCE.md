@@ -302,7 +302,9 @@ kexec, verify). Secrets and generated auth are gitignored.
 
 This runbook is manual/agent-followable. To make it one-command (`infra/up.sh --openshift`):
 
-1. `provision/openshift-box.sh` — create EM-B112X, wait `install.status`, capture CIDR/disks.
+1. A `"kind": "baremetal"` row in `terraform/lessons.json` for EM-B112X — the
+   `lesson-box` module already builds Elastic Metal and waits on the install, so
+   this is a table entry rather than a new script. Capture CIDR/disks after apply.
 2. `substrates/90-openshift-sno.sh` — generate ignition from a template + the real CIDR; boot rescue; docker-on-sdb; kexec-into-live; poll for API; add `/etc/hosts`; push `oc`.
 3. Decide the `*.apps` DNS story (on-node dnsmasq wildcard) if the web console is ever wanted.
 4. Idempotency + a `--teardown` that `scw baremetal server delete`s and reverts the client MTU.

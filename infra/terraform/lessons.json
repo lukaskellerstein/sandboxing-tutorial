@@ -1,0 +1,82 @@
+{
+  "_comment": [
+    "THE per-lesson hardware table. This file is the single source of truth: Terraform reads it",
+    "with jsondecode(), and infra/lib.sh reads it with jq. JSON rather than .tfvars precisely so",
+    "both can read the same bytes — a generated second copy is how the two drift apart.",
+    "",
+    "kind is 'vm' (a Scaleway VM, console: Compute -> CPU & GPU Instances) or 'baremetal'",
+    "(Scaleway Elastic Metal, console: Bare Metal -> Elastic Metal). It is a per-lesson decision.",
+    "",
+    "Lessons 1-5 all run on VMs, and that is a MEASURED choice rather than a cost optimisation.",
+    "Measured 2026-08-06 on this account, running the repo's own substrates and lessons unmodified:",
+    "  * lesson 1's full scorecard is row-for-row identical on a VM and on EM-A116X-SSD metal",
+    "    (all 17 findings, same BLOCKED/REACHED); rootless podman reports Rootless:true; runsc",
+    "    reports 4.19.0-gvisor; the distro hardening the lessons lean on is the same",
+    "    (unprivileged_bpf_disabled=2, perf_event_paranoid=4, kptr_restrict=1).",
+    "  * a VM exposes /dev/kvm AND /dev/vhost-vsock (AMD EPYC 7543, svm, kvm_amd.nested=1), so",
+    "    Kata boots a real guest — kernel 6.18.35, the same guest kernel the metal box recorded,",
+    "    and lesson 4's surprise reproduces (guest unprivileged_bpf_disabled=0 vs node 2).",
+    "  * lesson 5's NAT guest boots on a VM and takes a private primary address on its",
+    "    default-route interface (192.168.122.0/24) — which is the whole point of that topology.",
+    "    The older 'the guest must be L1, so lesson 5 needs metal' note was wrong: that symptom",
+    "    (grub loads, kernel resets forever) was later traced to BIOS-vs-UEFI and seen on metal",
+    "    too, which is why 50-nat-vm.sh passes --boot uefi.",
+    "",
+    "What VMs buy, in order of how much it matters: Elastic Metal has a default quota of 2 on a",
+    "new organization, so four metal lessons could not be up at once and the reader had to run",
+    "them in batches; metal stock is per-offer and moves; and a metal OS install takes 10-15",
+    "minutes per box against under a minute for a VM. The money is a rounding error either way.",
+    "",
+    "root_volume_gb is NOT a default worth trusting: a Scaleway VM's default root volume is 8 GB",
+    "usable and the Kata stack (nerdctl-full + kata-static) needs 9.3 GB. Metal's large local SSD",
+    "hid that, and the failure is a tar dying with 'No space left on device' mid-install.",
+    "",
+    "Prices are read live from the Scaleway catalogue by lib.sh — never hardcoded here, because a",
+    "stale price in a cost warning is worse than no price."
+  ],
+
+  "lesson-01-no-sandbox": {
+    "kind": "vm",
+    "type": "PLAY2-NANO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 20,
+    "substrates": [],
+    "why": "The bare box IS the lesson. No engine, no runtime — the rogue agent runs as an ordinary host process, which is only acceptable on a machine that is destroyed minutes later."
+  },
+
+  "lesson-02-container": {
+    "kind": "vm",
+    "type": "PLAY2-NANO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 20,
+    "substrates": ["10-podman"],
+    "why": "Rootless podman on the VM's own kernel. The unprivileged `agent` user is created by cloud-init and is load-bearing: rootless is the claim this lesson makes, and a Scaleway VM otherwise logs in as root."
+  },
+
+  "lesson-03-container-gvisor": {
+    "kind": "vm",
+    "type": "PLAY2-NANO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 20,
+    "substrates": ["10-podman", "20-runsc"],
+    "why": "runsc is user-space and needs no hardware feature. Registered as an opt-in podman runtime so the default stays crun and Part 3 can re-run the previous rung on the same box."
+  },
+
+  "lesson-04-container-kata": {
+    "kind": "vm",
+    "type": "PLAY2-MICRO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 40,
+    "substrates": ["30-containerd-kata"],
+    "why": "Needs /dev/kvm and /dev/vhost-vsock, which this VM type has. 40 GB because the Kata stack measured 9.3 GB and the 8 GB default root volume fails mid-tar. PLAY2-MICRO (8 GB RAM) so the 2 GB guest and the containerd/buildkit stack coexist."
+  },
+
+  "lesson-05-container-openshell": {
+    "kind": "vm",
+    "type": "PLAY2-MICRO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 40,
+    "substrates": ["50-nat-vm", "40-openshell"],
+    "why": "OpenShell's rootless-podman driver refuses to start when the host's default-route address is public, and every Scaleway box has one. 50-nat-vm builds a libvirt guest on virbr0 whose primary address is private; the lesson then runs INSIDE that guest, reached through this box. Needs /dev/kvm for the guest and disk for its image."
+  }
+}
