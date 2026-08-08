@@ -31,6 +31,21 @@
     "usable and the Kata stack (nerdctl-full + kata-static) needs 9.3 GB. Metal's large local SSD",
     "hid that, and the failure is a tar dying with 'No space left on device' mid-install.",
     "",
+    "Chapter 3 (lessons 6-9) runs single-node k3s ON these same disposable VMs rather than against a",
+    "managed cluster (Scaleway Kapsule) or a nested one (minikube, kind). Three reasons, in order of",
+    "how much they matter:",
+    "  * every boundary in the chapter is installed AT NODE LEVEL — runsc's binaries and a containerd",
+    "    runtime, kata-static plus /dev/kvm, the OpenShell gateway. Managed node pools reconcile that",
+    "    away, and minikube's docker driver nests the node inside a container, which breaks Kata and",
+    "    makes lesson 6's 'the pod runs on the node's kernel' claim untrue of the thing you ran.",
+    "  * a managed cluster hands you a kubeconfig, and a kubeconfig is a CREDENTIAL. k3s writes its",
+    "    own on the box and it never leaves, so nothing has to be kept out of the repo by hand.",
+    "  * k3s costs ~1.2 GB idle and 30-60 seconds, against 4-6 minutes to create a Kapsule cluster",
+    "    whose nodes are billed at these very same VM prices. There is no money in it, only delay.",
+    "k3s enforces NetworkPolicy through an embedded kube-router controller (flannel alone does not),",
+    "which lesson 6 depends on — and which 60-k8s.sh ASSERTS rather than assumes, because a CNI that",
+    "accepts a NetworkPolicy object and silently ignores it is this repo's characteristic failure.",
+    "",
     "Prices are read live from the Scaleway catalogue by lib.sh — never hardcoded here, because a",
     "stale price in a cost warning is worse than no price."
   ],
@@ -78,5 +93,41 @@
     "root_volume_gb": 40,
     "substrates": ["50-nat-vm", "40-openshell"],
     "why": "OpenShell's rootless-podman driver refuses to start when the host's default-route address is public, and every Scaleway box has one. 50-nat-vm builds a libvirt guest on virbr0 whose primary address is private; the lesson then runs INSIDE that guest, reached through this box. Needs /dev/kvm for the guest and disk for its image."
+  },
+
+  "lesson-06-k8s": {
+    "kind": "vm",
+    "type": "PLAY2-NANO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 20,
+    "substrates": ["60-k8s"],
+    "why": "Single-node k3s (~1.2 GB idle) plus one agent pod plus a podman build fits a 4 GB box with room to spare. Deliberately the SAME type lessons 1-3 used: chapter 3's claim is that Kubernetes composes lesson 2's primitives rather than inventing a boundary, and that comparison is cleanest when the hardware underneath has not moved."
+  },
+
+  "lesson-07-k8s-gvisor": {
+    "kind": "vm",
+    "type": "PLAY2-NANO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 20,
+    "substrates": ["60-k8s", "70-k8s-gvisor"],
+    "why": "runsc is user-space and needs no hardware feature — lesson 3 already proved this exact VM type runs it. The only addition over lesson 6 is a containerd runtime and a RuntimeClass, which cost nothing in RAM."
+  },
+
+  "lesson-08-k8s-kata": {
+    "kind": "vm",
+    "type": "PLAY2-MICRO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 40,
+    "substrates": ["60-k8s", "80-k8s-kata"],
+    "why": "Needs /dev/kvm and /dev/vhost-vsock, which this VM type has (measured on lesson 4). 40 GB because the Kata stack measured 9.3 GB and the 8 GB default root volume dies mid-tar. 8 GB RAM so k3s, the containerd stack and a 2 GB guest VM coexist."
+  },
+
+  "lesson-09-k8s-openshell": {
+    "kind": "vm",
+    "type": "PLAY2-MICRO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 40,
+    "substrates": ["60-k8s", "90-k8s-openshell"],
+    "why": "The Agent Sandbox controller, the OpenShell gateway StatefulSet and its PVC all land on this one node alongside k3s; the prior art measured that path at roughly 4 CPU / 8 GB. Note what is NOT here: lesson 5's 50-nat-vm. The public-default-route constraint belongs to OpenShell's rootless-podman driver, and the kubernetes driver's sandbox callback is an in-cluster Service on a private ClusterIP."
   }
 }

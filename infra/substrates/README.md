@@ -1,7 +1,10 @@
-# Chapter 2 substrates — install scripts + verification results
+# Substrates — install scripts + verification results
 
 Each script installs one boundary and asserts it engages **from inside** (kernel
 identity), never from the flag.
+
+`10`–`50` are chapter 2 (one host); `60`–`90` are chapter 3 (Kubernetes) and are
+documented at the end of this file.
 
 > [!important]
 > **This file is a measurement log, and its early entries were superseded on
@@ -247,3 +250,120 @@ A fourth, latent one worth not reintroducing: that heredoc is **unquoted** (it h
 to interpolate the keys), so `$(...)` anywhere inside it — including in a comment —
 runs on the host at generation time. One comment contained `$(openshell doctor
 check)` and was being executed.
+
+---
+
+## Chapter 3 substrates — Kubernetes (lessons 6–9)
+
+Single-node **k3s** on the lesson's own disposable VM. Why k3s rather than a managed
+cluster (Kapsule) or a nested one (minikube, kind) is argued once, in
+`terraform/lessons.json`; the short version is that every boundary in this chapter is
+installed at **node** level, which managed node pools reconcile away and nested nodes
+cannot host at all.
+
+| # | Substrate | Lesson | Result | Proof (from inside the box) |
+| :-- | :-- | :-- | :-- | :-- |
+| `60-k8s.sh` | k3s `v1.36.3+k3s1`, containerd `2.3.2-k3s2` | 6 | ✅ **works** | plain pod → `uname -r` = **6.8.0-106-generic**, the node's. Correct: a pod is not a kernel boundary |
+| `70-k8s-gvisor.sh` | gVisor `release-20260803.0` as a containerd runtime + RuntimeClass | 7 | ✅ **works** | pod under `runtimeClassName: gvisor` → **4.19.0-gvisor**, `/sys/module` 216 → **0** |
+| `80-k8s-kata.sh` | kata-deploy `4.0.0` Helm chart, `k8sDistribution=k3s` | 8 | see below | |
+| `90-k8s-openshell.sh` | agent-sandbox `v0.5.4` + OpenShell chart `0.0.99` | 9 | see below | |
+
+### Four things that cost a provisioned box each to find (2026-08-08)
+
+1. **`kubectl wait --all` does not wait for a resource to EXIST.** With nothing
+   matching it exits immediately with `error: no matching resources found`. For the
+   first ~20 s after k3s starts the API server answers but the node has not registered,
+   so the wait lands in exactly that window and fails the substrate. Poll for the
+   object first, then wait on its condition.
+
+2. **A NetworkPolicy is not in force when a pod starts.** It is rules a controller
+   writes in *reaction* to the pod's creation, so a container that opens a socket on
+   its first instruction beats it. Measured: a one-shot pod got the **same 301** with
+   and without a deny-all policy. Two consequences, both load-bearing:
+   - `check.sh` proves enforcement by `exec`ing into an **already-running** pod, and
+     reports how long it took (**0 s** once the pod exists — so the whole effect is the
+     pod-start race, not slow enforcement).
+   - the lessons' agent pod waits `POLICY_SETTLE_S` before starting the suite. If that
+     is ever too short the lesson **fails loudly** rather than reporting a weaker
+     boundary, because `exfiltrate` would read REACHED and the assertion catches it.
+
+3. **`kubectl run --rm -i` returns the output TWICE, intermittently.** With `-i`
+   kubectl attaches, and when the container has already written and exited before the
+   attach lands it *also* dumps the logs. One run reported a clean `6.8.0-106-generic`,
+   the next `6.8.0-106-generic\n6.8.0-106-generic` — which then failed to equal the
+   node's kernel and read as "something is already intercepting". `check.sh` now
+   creates → polls for a terminal phase → reads `kubectl logs` → deletes.
+
+4. **In a Pod, attack 7 kills the container instead of being refused.** Lesson 2's
+   podman container survives the same 256Mi cap and reports `capped:pids,mem`; the pod
+   is `OOMKilled`, because cgroup v2 kills a container's cgroup as a **group**. The row
+   proving the cap engaged is therefore the one row the box never prints, so it is
+   merged host-side from the kubelet's termination reason — and only credited as
+   contained when that reason is literally `OOMKilled`.
+
+### Notes that carry into `infra/` automation
+
+- **k3s does not auto-detect `runsc` or Kata.** Its automatic alternative-runtime
+  detection covers crun, the NVIDIA runtimes and the wasm shims only. gVisor needs a
+  containerd config template beside the generated config (k3s **regenerates**
+  `config.toml` on every start, so editing it directly is undone).
+- **The CRI plugin was renamed in containerd 2.0**: `io.containerd.grpc.v1.cri` →
+  `io.containerd.cri.v1.runtime`, config version 2 → 3. `70-k8s-gvisor.sh` reads the
+  plugin name off the config k3s just generated rather than hardcoding it, so it works
+  on either side of that change. Verified live: `io.containerd.cri.v1.runtime` →
+  `config-v3.toml.tmpl`.
+- **`k8sDistribution=k3s` is load-bearing for kata-deploy.** k3s keeps containerd under
+  `/var/lib/rancher/k3s/agent/etc/containerd` with the socket at
+  `/run/k3s/containerd/containerd.sock`, and the chart derives both from that one
+  value. Left at its default the chart writes a drop-in into a directory k3s never
+  reads, **reports success**, and every Kata pod then fails for a reason nothing in the
+  DaemonSet logs mentions.
+- **kata-deploy is a Helm chart as of Kata 4.0.0.** The kustomize `overlays/k3s` path
+  is gone; any guide telling you to `kubectl apply -k` is describing an older version.
+- **The agent image is tagged `:v1`, never `:latest`.** Kubernetes defaults a `:latest`
+  tag to `imagePullPolicy: Always`, so a side-loaded image is ignored and the kubelet
+  chases Docker Hub for something already on disk. Lessons 6–8 could set the policy
+  themselves; **lesson 9 cannot**, because OpenShell owns that pod spec.
+- **`~/.sandboxing-tutorial.env` must be APPENDED to, with a guard.** Lesson 9 runs
+  `60-k8s.sh` *and* `90-k8s-openshell.sh`, and a substrate that truncates it would strip
+  the `KUBECONFIG` the previous one exported.
+
+### Lesson 9 — OpenShell's kubernetes driver WORKS, and the NAT guest is not needed
+
+The open question from chapter 2 is answered. Lesson 5's `50-nat-vm.sh` exists because
+OpenShell's **rootless-podman** driver refuses to start when the host's default-route
+address is public, and every Scaleway box has one. That constraint belongs to the podman
+driver's sandbox callback. Under the **kubernetes** driver the gateway is a workload in
+the cluster and the callback is an in-cluster Service on a private ClusterIP, so there is
+nothing to work around: `openshell status` reports **Connected** on a plain public-IP VM,
+and a policy-governed sandbox pod runs. This confirms, on hardware, the prediction made
+in the OpenShell section above ("Cleanest = the k8s driver … this entire class of problem
+disappears").
+
+Two traps found here, both costing a box:
+
+1. **The installer bootstraps its own LOCAL gateway and then fails.** After unpacking the
+   `.deb`, `install.sh` registers a local gateway on `127.0.0.1:17670`, sets it active,
+   and blocks waiting for it. On this box it cannot start —
+
+   ```text
+   configuration error: no compute driver configured and auto-detection found
+   no suitable driver; set --drivers or OPENSHELL_DRIVERS to kubernetes, podman, docker, or vm
+   ```
+
+   — because the user service has no `OPENSHELL_DRIVERS` and there is no rootless podman
+   socket to auto-detect. That failure is correct and irrelevant (lesson 9's gateway is
+   the Helm release), but the installer **exits non-zero**, which under `set -e` threw
+   away a working box. The substrate now tolerates that exit, asserts the binary landed,
+   and disables the local service. It also runs `openshell gateway select k8s`, because
+   the installer left *its* gateway marked active.
+
+2. **The CLI and the chart version independently.** Pinning only the chart gave a gateway
+   at `0.0.99` paired with a CLI that installed itself as **`0.0.101`**. `install.sh`
+   honours `OPENSHELL_VERSION`, so both are now pinned to the same version — note the
+   forms differ: the chart wants `0.0.99`, the git tag is `v0.0.99`.
+
+Verified: `openshell 0.0.99`, gateway **Connected**, driver `kubernetes`, sandbox Ready,
+policy applied, **19 OCSF decisions recorded**, and `http_method_denied` / `binary_scoped`
+/ `fs_policy_write` all `403`/`PermissionError` where lesson 6's NetworkPolicy let every
+one of them through.

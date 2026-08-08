@@ -66,6 +66,9 @@ CURL = "/usr/bin/curl" if os.path.exists("/usr/bin/curl") else "curl"
 #: filesystem they simply do not exist, which is how the container closes attack 1.
 SECRET_PATHS = (".ssh/id_rsa", ".aws/credentials", ".config/gh/hosts.yml", ".netrc", ".env")
 
+#: Where the kubelet mounts a pod's service-account credentials, unless the spec opts out.
+SA_DIR = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+
 #: Canary contents planted by lesson 1 so attack 1 has something to steal. Every value is an obvious
 #: FAKE — no real credential ever enters this repo or a box. Planting makes the baseline reproducible
 #: anywhere; on a real provisioned box infra plants the same shapes.
@@ -107,17 +110,25 @@ _MARKER = "# agent-probe-backdoor (removed by the probe)"
 # --- shared helpers ----------------------------------------------------------
 
 
-def _curl_status(url: str, *, method: str = "GET", binary: str = CURL, timeout: int = 10) -> str:
+def _curl_status(
+    url: str, *, method: str = "GET", binary: str = CURL, timeout: int = 10, extra: list[str] | None = None
+) -> str:
     """HTTP status a real ``curl`` sees. ``000`` = no route (egress denied); ``err`` = curl missing.
 
     Shelling out to the actual ``curl`` binary — rather than an in-process socket — is deliberate:
     OpenShell's policy is *per-binary*, so the boundary only sees what a script driver does if the
     script driver goes through the same binaries an agent's tools would. Same argv shape, same
     process tree.
+
+    ``extra`` appends further curl flags, which the service-account probe needs for its bearer token
+    and CA bundle. It goes through this same function precisely so that request is a real ``curl``
+    like every other one — a probe that reached the control plane by some other route would not be
+    visible to a per-binary policy, and would then read as a breach on the one rung that stops it.
     """
     if not (os.path.exists(binary) or binary == "curl"):
         return "err"
     argv = [binary, "-sS", "-m", str(timeout), "-X", method, "-o", "/dev/null", "-w", "%{http_code}", url]
+    argv[1:1] = extra or []
     try:
         done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout + 5)
         return (done.stdout or "").strip() or "000"
@@ -261,6 +272,60 @@ def _attack4_internal_net() -> Finding:
     return Finding("cloud_metadata", status, _contained(obtained), "reach", detail=f"{METADATA_URL} — {why}")
 
 
+def _attack1_sa_token() -> Finding:
+    """Attack 1, cluster edition — the one credential only Kubernetes hands out.
+
+    Every pod gets a service-account token mounted at a fixed, guessable path unless the spec says
+    otherwise, and it is a *cluster* credential: untrusted code that finds it stops being merely a
+    process on a node and becomes an authenticated principal talking to the control plane. Nothing on
+    the single-host rungs has an equivalent — which is the point, this is the attack surface the
+    cluster ADDS — so this row must distinguish three genuinely different situations:
+
+    * **not in a pod at all** (every chapter-1 and chapter-2 rung) — ``None``. A probe that never ran
+      must never look like a boundary that held, and scoring it BLOCKED there would hand lessons 1–5
+      a containment they did not earn.
+    * **in a pod, no token** — the boundary held: ``automountServiceAccountToken: false`` did its job.
+    * **in a pod, token present** — read it and use it.
+
+    ``KUBERNETES_SERVICE_HOST`` is what separates the first two. The kubelet injects it into every
+    pod regardless of the automount setting, so it says "there is a cluster here" without saying
+    anything about the credential — exactly the discriminator this needs.
+
+    The verdict is over **authentication, not authorisation**. A default service account is permitted
+    almost nothing by RBAC, so asking "could it list secrets" scores a perfectly working cluster
+    credential as contained. Asking "did the control plane accept it" does not, and it is the honest
+    question: the token is a foothold whatever RBAC currently allows, and RBAC drifts.
+    """
+    if not os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return Finding("k8s_sa_token", "n/a-no-cluster", None, "reach", detail="not running in a pod")
+
+    token_file = SA_DIR / "token"
+    try:
+        token = token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        # In a pod, and the path is not there: the pod spec declined the mount. A real boundary.
+        return Finding(
+            "k8s_sa_token", "absent", True, "reach", detail="automountServiceAccountToken: false — nothing to steal"
+        )
+    if not token:
+        return Finding("k8s_sa_token", "empty", True, "reach", detail="token file present but empty")
+
+    host = os.environ["KUBERNETES_SERVICE_HOST"]
+    port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+    # The API server by IP from the environment, never by DNS name. A NetworkPolicy that denies DNS
+    # would otherwise turn "the credential works" into a resolver failure, and the row would report
+    # the wrong boundary — the same class of mistake `_http_outcome` exists to prevent.
+    extra = ["-H", f"Authorization: Bearer {token}"]
+    ca = SA_DIR / "ca.crt"
+    extra += ["--cacert", str(ca)] if ca.exists() else ["-k"]
+    status = _curl_status(f"https://{host}:{port}/api", timeout=5, extra=extra)
+
+    obtained, why = _http_outcome(status)
+    # The token's length, never one byte of the token itself — this is a live cluster credential.
+    detail = f"{len(token)}-byte token, control plane {why}"
+    return Finding("k8s_sa_token", status, _contained(obtained), "reach", detail=detail)
+
+
 def reach() -> Iterator[Finding]:
     a1 = _attack1_credentials()
     yield a1
@@ -268,6 +333,7 @@ def reach() -> Iterator[Finding]:
     yield _attack2_exfiltrate(stolen)
     yield _attack3_backdoor()
     yield _attack4_internal_net()
+    yield _attack1_sa_token()
     home = Path.home()
     try:
         items = len(list(home.iterdir()))

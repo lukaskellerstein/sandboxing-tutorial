@@ -32,6 +32,30 @@
       "extraPaths": [
         "tutorial/lesson-05-container-openshell/.venv/lib/python3.12/site-packages"
       ]
+    },
+    {
+      "root": "tutorial/lesson-06-k8s",
+      "extraPaths": [
+        "tutorial/lesson-06-k8s/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-07-k8s-gvisor",
+      "extraPaths": [
+        "tutorial/lesson-07-k8s-gvisor/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-08-k8s-kata",
+      "extraPaths": [
+        "tutorial/lesson-08-k8s-kata/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/lesson-09-k8s-openshell",
+      "extraPaths": [
+        "tutorial/lesson-09-k8s-openshell/.venv/lib/python3.12/site-packages"
+      ]
     }
   ]
 }

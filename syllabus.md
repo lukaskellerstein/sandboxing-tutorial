@@ -364,8 +364,11 @@ infra/
 │   ├── 30-containerd-kata.sh  containerd + nerdctl + kata-static
 │   ├── 40-openshell.sh        OpenShell (pinned)
 │   ├── 50-nat-vm.sh           the NAT'd guest lesson 5's gateway requires
-│   ├── 60-k8s-gvisor.sh · 70-k8s-kata.sh · 80-k8s-openshell.sh
-│   └── 90-openshift-sno.sh    single-node OpenShift + sandboxed containers operator
+│   ├── 60-k8s.sh              k3s itself — the cluster lessons 6-9 all share
+│   ├── 70-k8s-gvisor.sh       runsc as a containerd runtime + RuntimeClass
+│   ├── 80-k8s-kata.sh         kata-deploy (a Helm chart as of Kata 4.0.0)
+│   ├── 90-k8s-openshell.sh    agent-sandbox controller + the OpenShell gateway
+│   └── 95-openshift-sno.sh    single-node OpenShift + sandboxed containers operator
 └── images/agent/              THE agent image: 4 frameworks + entrypoint + attack suite
 ```
 
@@ -559,8 +562,13 @@ node), the per-pod VM boot tax, and OOM semantics — the *guest* kernel handles
 before the node does. The prior art measured a surprise worth preserving: the
 famous per-pod VM boot **did not dominate** — scheduling swamped it — so this lesson
 prints the number rather than asserting a tax. Verify the RuntimeClass name with
-`kubectl get runtimeclass`; it is a kata-deploy artifact and the obvious guess is
-wrong.
+`kubectl get runtimeclass` rather than hardcoding one: kata-deploy 4.0.0 registers
+**25** of them on this cluster (`kata-qemu`, `kata-clh`, `kata-fc`,
+`kata-qemu-runtime-rs`, the coco/snp/tdx/nvidia variants…), and which exist depends on
+the release and the node. `kata-qemu` is the one to want and it is present — the
+earlier note here said the obvious guess is wrong, and measurement on 2026-08-08
+contradicted that. Read the list anyway: a wrong name fails as *"RuntimeClass not
+found"*, which reads like a broken install rather than a stale assumption.
 
 **`lesson-09-k8s-openshell`** — OpenShell's kubernetes driver on the Agent Sandbox
 controller. Two constraints that produce confusing failures if unknown: a gateway
@@ -682,6 +690,42 @@ is run.
 ## Verified on this hardware (2026-08-04)
 
 Measured, not assumed. Re-verify before contradicting any of it.
+
+### Chapter 3 runs on single-node k3s (2026-08-08) — all four rungs green
+
+Four throwaway VMs, `fr-par-1`, Ubuntu 24.04, k3s `v1.36.3+k3s1` (containerd
+`2.3.2-k3s2`), node kernel `6.8.0-106-generic` — the same kernel lessons 1–4 recorded,
+so the rungs compare across chapters without `overall.py`'s cross-host warning.
+
+| Rung | Box | Score (network-on) | Proof, from inside the sandbox |
+| :-- | :-- | --: | :-- |
+| 6 pod | `PLAY2-NANO` | 14/19 | pod kernel **==** node's — a pod is not a kernel boundary |
+| 7 + gVisor | `PLAY2-NANO` | 16/19 | `4.19.0-gvisor`, `/sys/module` 216 → **0**, `io_uring` ENOSYS |
+| 8 + Kata | `PLAY2-MICRO` | 14/19 | guest `6.18.35` ≠ node — the same guest kernel metal recorded |
+| 9 + OpenShell | `PLAY2-MICRO` | 17/19 | `403` on method, binary and off-policy host; **19 OCSF records** |
+
+Four findings worth keeping:
+
+- **Kata works on k3s.** The prior art only ever proved it on RKE2. kata-deploy 4.0.0's
+  Helm chart with `k8sDistribution=k3s` installs cleanly; that value is load-bearing,
+  because k3s keeps containerd somewhere a stock cluster does not and the chart derives
+  both socket and config path from it.
+- **OpenShell's kubernetes driver needs no NAT guest.** Lesson 5's `50-nat-vm.sh` exists
+  because the *rootless-podman* driver refuses a public default-route address. Under the
+  kubernetes driver the callback is an in-cluster Service on a private ClusterIP, so
+  `openshell status` reports **Connected** on a plain public-IP VM. This confirms the
+  prediction recorded in `infra/substrates/README.md`.
+- **Read the matrix, never the count.** Rungs 6 and 8 both score 14/19 for opposite
+  reasons: Kata closes `kernel_identity`/`sys_module_count` and **reopens** `bpf` and
+  `io_uring_setup`, because its stock guest kernel is less hardened than the node's
+  Ubuntu. Lesson 4 measured the same reversal on a host.
+- **The two cost profiles are opposites.** gVisor charges **2.51×** on syscalls and
+  ≈1.0× on CPU; Kata charges **0.30×** on syscalls (it is *faster* — no interception)
+  and ≈1.0× on CPU, paying instead at pod start: **2.8–3.7×**, measured on two boxes.
+
+Chapter 3 is **network-on only**. Lessons 2–4 run both modes because a container's only
+network verdict is on/off; from lesson 6 a NetworkPolicy can say *this destination, that
+port*, so the egress-off column stops being the interesting one.
 
 ### Scaleway VMs carry lessons 1–5 (2026-08-06) — why metal was dropped
 
