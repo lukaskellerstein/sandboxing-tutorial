@@ -2,26 +2,24 @@
 
 Lesson 1 ran the rogue agent with no boundary and every attack landed. This lesson changes exactly
 one thing — it puts the *same image* behind a container with every everyday control turned on — and
-re-runs the identical suite. Most attacks die here. Three do not, and those three are the whole rest
-of the tutorial:
+re-runs the identical suite. Several attacks die here. Three groups do not, and those are the whole
+rest of the tutorial:
 
   * attack 8 (kernel) is untouched — a container shares the host kernel, so ``/sys/module`` is still
     full and the kernel identifies as the host's. That is lesson 3 (gVisor) and lesson 4 (Kata).
-  * attacks 5–6 die ONLY because egress is fully off (``--network none``). A real agent needs *some*
-    network, and the moment you allow any, blanket on/off cannot tell a typosquat install from a
-    legitimate GET. That is lesson 5 (OpenShell).
+  * attacks 2, 4, 5 and 6 are untouched, because each needs a network and so does the agent. A
+    container's only network verdict is on or off; with it on, nothing here can tell a typosquat
+    install from a legitimate GET. That is lesson 5 (OpenShell).
   * nothing here recorded that any attempt was made (evidence = 0). Also lesson 5.
 
-Part 4 stops *asserting* that second point and measures it. The same container runs the suite twice:
-
-  ``egress-off``   ``--network none`` — the scoreboard everyone quotes
-  ``network-on``   the engine's ordinary network — what an agent that must call an LLM API has
-
-Both are the same container with the same hardening; only the network differs. The egress-off column
-is the one that flatters a container, and it describes a deployment that cannot run an agent.
+**The suite runs with the engine's ordinary network**, which is what makes that second bullet a
+measurement rather than a promise. ``--network none`` would close attacks 2, 4, 5 and 6 for free and
+score this rung far higher — it is the number a container scoreboard usually quotes, and it
+describes a deployment that cannot run an agent at all. Every rung of this ladder is measured
+online, so the rungs are comparable to each other and the scoreboard is honest.
 
 The boundary lives in the podman machine on macOS, or on the host kernel on a real Linux box — this
-lesson runs the same either way. What it does NOT claim is a kernel boundary; see Part 4.
+lesson runs the same either way. What it does NOT claim is a kernel boundary.
 
     cd tutorial/lesson-02-container && uv sync && uv run python -u main.py
 """
@@ -47,10 +45,6 @@ METADATA_URL = os.environ.get("PROBE_METADATA_URL", "")
 METADATA_ENV = ["-e", f"PROBE_METADATA_URL={METADATA_URL}"] if METADATA_URL else []
 
 RESULTS = REPO_ROOT / "results" / "lesson-02.json"
-#: The same rung measured with the network an agent actually needs. A separate card rather than a
-#: second findings list, so every consumer keeps reading one card shape and can simply ask which
-#: mode it holds.
-RESULTS_NET_ON = REPO_ROOT / "results" / "lesson-02-network-on.json"
 PREVIOUS = REPO_ROOT / "results" / "lesson-01.json"
 SUITE_DIR = REPO_ROOT / "infra" / "images" / "agent"  # PYTHONPATH for the live no-sandbox re-run
 
@@ -74,14 +68,6 @@ HARDENING = [
     "--cpus",
     "1",  # cgroup cpu cap
 ]
-
-#: The only difference between the two runs in Part 4. Everything above stays identical, which is
-#: what makes the comparison a measurement of the network model rather than of two containers.
-NET_OFF = ["--network", "none"]  # deny all egress
-#: No flag at all: the engine's default network, which is what you get when you do not think about
-#: it — and what an agent that must reach an LLM API is given. Naming a specific mode here
-#: (slirp4netns, pasta) would pin a podman implementation detail the lesson does not teach.
-NET_ON: list[str] = []
 
 
 def banner(text: str) -> None:
@@ -120,9 +106,12 @@ def ensure_image(eng: str) -> None:
     subprocess.run(["bash", str(build)], check=True, capture_output=True, env={**os.environ, "CONTAINER_ENGINE": eng})
 
 
-def run_in_container(eng: str, net: list[str]) -> Card:
+def run_in_container(eng: str) -> Card:
+    # No network flag at all, deliberately: the engine's default is what you get when you do not
+    # think about it, and it is what an agent that must reach an LLM API is given. Naming a specific
+    # mode (slirp4netns, pasta) would pin a podman implementation detail this lesson does not teach.
     argv = [
-        eng, "run", "--rm", "--user", "1000:1000", *HARDENING, *net,
+        eng, "run", "--rm", "--user", "1000:1000", *HARDENING,
         "-e", "PROBE_GROUPS=reach,abuse,kernel,cost",
         "-e", f"PROBE_NODE_KERNEL={node_kernel(eng)}",
         *METADATA_ENV,
@@ -173,43 +162,26 @@ def assert_boundary_engaged(card: Card) -> None:
     """Prove the container actually did what the lesson claims — from the readings, not the flags.
 
     This repo's characteristic silent failure is a boundary that did not engage yet still exits 0.
-    Lesson 2's boundary is 'a fresh, capped, egress-less filesystem', so we assert exactly that: the
-    host's credentials were unreachable, egress was denied, and a resource cap bit. If any of these
-    did not hold, the container was not the container we asked for and the scorecard is a lie.
+    Lesson 2's boundary is 'a fresh, capped filesystem, with the network an agent needs', so all
+    three halves are asserted: the host's credentials were unreachable, a resource cap bit, and
+    egress was genuinely open. If any did not hold, the container was not the container we asked for
+    and the scorecard is a lie.
+
+    That last check points the *opposite* way from the other two, and it is the one that is easy to
+    leave out. If this container came up with no egress after all — a broken rootless network stack,
+    a missing pasta/slirp4netns binary — every network row would read BLOCKED and the scorecard
+    would announce that a container stops exfiltration. That is precisely the false comfort this
+    lesson exists to remove, and it is indistinguishable from a real result unless it is asserted.
     """
     checks = {
         "fresh filesystem (host creds unreachable)": card.contained("read_credentials") is True,
-        "egress denied (--network none engaged)": card.contained("exfiltrate") is True,
         "resource cap bit (cgroups engaged)": card.contained("resource_exhaustion") is True,
+        "egress genuinely OPEN (the network this rung claims to measure)": card.contained("exfiltrate") is False,
     }
     for label, ok in checks.items():
         print(f"    [{'OK' if ok else '!!'}] {label}")
     if not all(checks.values()):
         sys.exit("  boundary assertion FAILED — the container did not engage as configured; not reporting a result.")
-
-
-def assert_network_on(card: Card) -> None:
-    """Prove the network-on run really had a network — the mode must be asserted, not assumed.
-
-    This is the same class of failure the whole repo is built to catch, pointing the other way. If
-    the second container came up with no egress after all — a broken rootless network stack, a
-    missing pasta/slirp4netns binary — every network row would read BLOCKED and the page would
-    announce that a container stops exfiltration when an agent is online. That is precisely the
-    false comfort Part 4 exists to remove, and it would be indistinguishable from a real result.
-
-    So: the network-on run is only allowed to report if egress demonstrably worked. The hardening
-    half must still hold too, or the two runs differ by more than the network and the comparison is
-    not about the network at all.
-    """
-    checks = {
-        "egress genuinely OPEN (the mode under test actually engaged)": card.contained("exfiltrate") is False,
-        "same hardening still on (fresh filesystem)": card.contained("read_credentials") is True,
-        "same hardening still on (resource cap)": card.contained("resource_exhaustion") is True,
-    }
-    for label, ok in checks.items():
-        print(f"    [{'OK' if ok else '!!'}] {label}")
-    if not all(checks.values()):
-        sys.exit("  network-on assertion FAILED — this run did not differ from egress-off only by the network.")
 
 
 def main() -> None:
@@ -221,8 +193,8 @@ def main() -> None:
     print("    " + " ".join(HARDENING))
 
     banner("Part 2 — Turn the rogue agent loose (the same nine attacks)")
-    print("  Mode: egress-off (--network none)\n")
-    card = run_in_container(eng, NET_OFF)
+    print("  The engine's ordinary network — what an agent that must call a model API is given.\n")
+    card = run_in_container(eng)
     print(card.render())
     blocked, applicable = card.tally()
     print(f"\n  boundaries that held: {blocked}/{applicable}")
@@ -238,55 +210,33 @@ def main() -> None:
     else:
         print(f"  ({source})\n")
         print(card.diff_against(prev, "no-sandbox", "container"))
+        print("  Both rungs ran with the same network, so every row that moved moved because of the")
+        print("  container and nothing else.")
 
-    banner("Part 4 — The same container, with the network a real agent needs")
-    print("  Everything above was measured with --network none. An agent that cannot reach an LLM")
-    print("  API is not an agent, so that column describes a deployment nobody ships. Here is the")
-    print("  identical container with the engine's ordinary network, and nothing else changed.\n")
-    net_card = run_in_container(eng, NET_ON)
-    print(net_card.render())
-    net_blocked, net_applicable = net_card.tally()
-    print(f"\n  boundaries that held: {net_blocked}/{net_applicable}   (egress-off scored {blocked}/{applicable})")
-
-    banner("Assert the network-on run really had a network")
-    assert_network_on(net_card)
-
-    print("\n  What the network bought the attacker:\n")
-    print(net_card.diff_against(card, "egress-off", "network-on"))
-    print("  Those rows did not reopen because the container got weaker — it is byte-for-byte the")
-    print("  same hardening. They reopened because a container's only network verdict is on/off, and")
-    print("  an agent needs 'on'. Nothing here can tell a typosquat fetch from a legitimate GET, and")
-    print("  no gVisor or Kata rung will help: neither reads HTTP. That is lesson 5's whole argument.")
-
-    banner("Part 5 — What is still open (the next lesson's reason to exist)")
-    still_open = card.reached()
-    for f in still_open:
+    banner("Part 4 — What is still open (the next lesson's reason to exist)")
+    for f in card.reached():
         print(f"    {f['name']:<20} {f['value']}")
-    print("\n  The kernel rows above are the big one: a container SHARES the host kernel, so attack 8")
-    print("  is exactly as open as it was in lesson 1. Lesson 3 swaps one word (--runtime runsc) and")
-    print("  watches it collapse. And every row Part 4 reopened stays open through lessons 3 and 4 —")
-    print("  only lesson 5 closes them, which is why it exists.")
+    print("\n  Two groups, and between them they are the rest of the tutorial.")
+    print("\n  The KERNEL rows are the first: a container SHARES the host kernel, so attack 8 is")
+    print("  exactly as open as it was in lesson 1. Lesson 3 swaps one word (--runtime runsc) and")
+    print("  watches it collapse; lesson 4 reaches the same place by booting a real guest kernel.")
+    print("\n  The NETWORK rows are the second, and they are the more stubborn. They are open because")
+    print("  a container's only network verdict is on or off, and an agent needs 'on' — nothing here")
+    print("  can tell a typosquat fetch from a legitimate GET. Switching egress off would close all")
+    print("  four and leave you with a sandbox that cannot run an agent, which is not a fix. Neither")
+    print("  gVisor nor Kata helps either: neither reads HTTP, so both leave these rows exactly where")
+    print("  they are. Only lesson 5 closes them with the network still on — its whole argument.")
 
-    # node_kernel: what the sandbox reported as the node's kernel. See lesson 1 for why it is here.
-    kernel = node_kernel(eng)
     card.save(
         RESULTS,
         lesson="lesson-02-container",
-        mode="egress-off",
-        engine=eng,
-        node_kernel=kernel,
-        boundary="hardened rootless container, --network none",
-    )
-    net_card.save(
-        RESULTS_NET_ON,
-        lesson="lesson-02-container",
         mode="network-on",
         engine=eng,
-        node_kernel=kernel,
+        # node_kernel: what the sandbox reported as the node's kernel. See lesson 1 for why it is here.
+        node_kernel=node_kernel(eng),
         boundary="hardened rootless container, ordinary network",
     )
     print(f"\n  scorecard written to {RESULTS.relative_to(REPO_ROOT)}")
-    print(f"                   and {RESULTS_NET_ON.relative_to(REPO_ROOT)}")
     report = Path(__file__).parent / "report.html"
     if render_report(REPO_ROOT):
         print(f"  report written to  {report.relative_to(REPO_ROOT)}")

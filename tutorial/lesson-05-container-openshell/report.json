@@ -1,9 +1,8 @@
 {
   "lesson": "lesson-05-container-openshell",
   "mode": "network-on",
-  "egress_off": null,
   "boundary": "ordinary runc + OpenShell policy (per-binary, method-aware) + OCSF audit",
-  "generated_at": "2026-08-07T13:21:08+02:00",
+  "generated_at": "2026-08-07T20:54:52+02:00",
   "complete": true,
   "blocked": 16,
   "scored": 19,

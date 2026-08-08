@@ -1,9 +1,8 @@
 {
   "lesson": "lesson-01-no-sandbox",
   "mode": "network-on",
-  "egress_off": null,
   "boundary": "native host process",
-  "generated_at": "2026-08-07T02:17:34+02:00",
+  "generated_at": "2026-08-07T20:54:52+02:00",
   "complete": true,
   "blocked": 3,
   "scored": 13,

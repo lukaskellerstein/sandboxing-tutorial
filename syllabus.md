@@ -35,34 +35,30 @@ some rows from *succeeded* to *blocked* — and, crucially, **leaves others stil
 succeeding.** The rows still green at the end of a lesson are the reason the next
 lesson exists. You never have to take a word of it on trust.
 
-### Two network modes, because the network is the whole argument
+### One network mode, because the network is the whole argument
 
 Four rows above say *"container (no egress) → OpenShell once egress is needed"*,
-and that qualifier is doing more work than any other phrase in this document. So
-lessons 2, 3 and 4 do not assert it — they **measure it**, running the same suite
-twice behind the same boundary:
+and that qualifier is doing more work than any other phrase in this document.
 
-| Mode | The container's network | What it represents |
-| :-- | :-- | :-- |
-| `egress-off` | `--network none` | the number a container scoreboard usually quotes |
-| `network-on` | the engine's ordinary network | an agent that must reach a model API |
+So **every rung is measured with the engine's ordinary network on**. That is not
+a detail of the harness, it is the condition that makes the ladder mean anything:
+an agent that cannot reach a model API is not an agent, and `--network none`
+closes attacks 2, 4, 5 and 6 for free — the number a container scoreboard usually
+quotes, describing a deployment nobody ships. Measured that flattering way a
+plain container scores 11/13 and gVisor 13/13. Measured online, on a Scaleway VM:
 
-Everything else is byte-identical between the two runs, so a row that differs
-differs because of the network and nothing else. Measured on a Scaleway VM:
+| Rung | blocked |
+| :-- | :-- |
+| 1 no sandbox | 3/13 |
+| 2 container | 7/13 |
+| 3 + gVisor | 9/13 |
+| 4 + Kata | 7/13 |
+| 5 + OpenShell | 16/19 |
 
-| Rung | egress-off | network-on |
-| :-- | :-- | :-- |
-| 1 no sandbox | — | 3/13 |
-| 2 container | 11/13 | **7/13** |
-| 3 + gVisor | 13/13 | **9/13** |
-| 4 + Kata | 11/13 | **7/13** |
-| 5 + OpenShell | — | 16/19 |
-
-**`network-on` is the headline everywhere in this repo**, because an agent that
-cannot reach a model API is not an agent, and `--network none` closes attacks 2,
-4, 5 and 6 for free. Lessons 1 and 5 have one mode by construction: lesson 1 has
-no boundary to switch off, and OpenShell's sandbox is online and policed rather
-than offline.
+One mode everywhere is also what makes those five numbers comparable to each
+other at all. A rung measured offline sitting in the same column as an online one
+would show a difference that is a mode artefact wearing the costume of a boundary
+result — exactly the quiet dishonesty this tutorial exists to avoid.
 
 Two things fall out of that table, and both are the point:
 
@@ -70,7 +66,7 @@ Two things fall out of that table, and both are the point:
   Kata.** None of the three reads HTTP, so a stronger *kernel* boundary buys
   nothing on that axis. Only lesson 5 closes them.
 - **Kata and the plain container both score 7/13 — for opposite reasons.** Kata
-  blocks `kernel_identity` and `sys_module_count` and reopens `bpf` and
+  blocks `kernel_identity` and `sys_module_count` and opens `bpf` and
   `io_uring_setup` (its guest kernel is less hardened than the node's); the
   container does the exact reverse. Read the matrix, never the count.
 
@@ -467,7 +463,7 @@ next.**
 
 | # | Lesson | Duration | What it closes |
 | :-- | :-- | :-- | :-- |
-| 2 | `lesson-02-container` | 60 min | attacks 1, 3, 7 — and 2, 4, 5, 6 only by killing all egress |
+| 2 | `lesson-02-container` | 60 min | attacks 1, 3, 7 — and *not* 2, 4, 5, 6, which need a network and so does the agent |
 | 3 | `lesson-03-container-gvisor` | 45 min | attack 8 |
 | 4 | `lesson-04-container-kata` | 60 min | attack 8, keeping Landlock |
 | 5 | `lesson-05-container-openshell` | 75 min | attacks 2, 4, 5, 6 and 9 — selectively, with the network still on |
@@ -480,26 +476,25 @@ because what survives is the whole rest of the tutorial. **Attack 8 is untouched
 — same kernel, same 200-plus modules, `bpf()` still works. **Attack 9 is
 untouched** — the container blocked things and forgot them.
 
-And then Part 4 turns the network on, which is where the lesson earns its place:
-the score drops from **11/13 to 7/13** and attacks 2, 4, 5 and 6 all come back.
-Not because the container got weaker — the hardening is byte-identical — but
-because a container's only network verdict is on or off, and an agent needs
-*some* network (the model gateway, perhaps GitHub). Blanket on/off cannot tell a
-typosquat-install from a legitimate `GET`, and neither gVisor nor Kata will help,
-because neither reads HTTP. That is lesson 5's opening, measured here rather than
-promised. Also covers the two problems the host never had: reaching the gateway
-from inside, and the nesting problem.
+**And attacks 2, 4, 5 and 6 are untouched**, which is where the lesson earns its
+place. It scores **7/13**, not the 11/13 a scoreboard would quote, because the
+suite runs with the network an agent actually needs. A container's only network
+verdict is on or off, and an agent needs *some* network (the model gateway,
+perhaps GitHub). Blanket on/off cannot tell a typosquat-install from a legitimate
+`GET`, and neither gVisor nor Kata will help, because neither reads HTTP. That is
+lesson 5's opening, measured here rather than promised. Also covers the two
+problems the host never had: reaching the gateway from inside, and the nesting
+problem.
 
 **`lesson-03-container-gvisor`** — one word different: `--runtime runsc`. Attack 8
 collapses: `/sys/module` empties, `bpf()` and `io_uring` return `ENOSYS`, the
 kernel identifies as gVisor's own. Corrects the widespread claim that gVisor needs
 KVM — its default **systrap** platform uses `seccomp-bpf`. Measures the syscall tax
-honestly (real on syscalls, ≈nothing on compute). Its Part 4 repeats lesson 2's
-network experiment under `runsc` and gets the same answer — **13/13 falls to
-9/13** — with not one kernel row moving. gVisor's boundary is the syscall
-interface: it holds attack 8 exactly as before, and it never had an opinion about
-HTTP. Attacks 2, 4, 5, 6 and 9 still succeed once the agent is online, because
-gVisor has no idea *which binary* made a request and keeps no record.
+honestly (real on syscalls, ≈nothing on compute). It scores **9/13** — the two
+kernel rows better than the plain container, and not one network row different.
+gVisor's boundary is the syscall interface: it holds attack 8, and it never had
+an opinion about HTTP. Attacks 2, 4, 5, 6 and 9 still succeed, because gVisor has
+no idea *which binary* made a request and keeps no record that one was made.
 
 **`lesson-04-container-kata`** — the same result as gVisor by a completely
 different route: a **real guest kernel** in a per-container VM. `uname -r` inside
@@ -509,20 +504,21 @@ cost is precisely the argument for chapter 3, where the cluster already runs
 containerd and Kata becomes one field. The difference that matters later: **Kata
 keeps Landlock, gVisor drops it.**
 
-Its Part 4 is the sharpest version of the whole tutorial's argument. The
-*strongest* kernel boundary on this ladder — a separate guest kernel in a separate
-VM — drops from **11/13 to 7/13** the moment the agent has a network, reopening
-exactly the rows a plain container reopens. A VM per container buys attack 8. It
-does not buy attacks 2, 4, 5 or 6, and no amount of kernel isolation will.
+It is also the sharpest version of the whole tutorial's argument. The *strongest*
+kernel boundary on this ladder — a separate guest kernel in a separate VM — scores
+**7/13**, the same as the plain container of lesson 2, leaving attacks 2, 4, 5 and
+6 exactly as open. A VM per container buys attack 8. It does not buy 2, 4, 5 or 6,
+and no amount of kernel isolation ever will: that distinction lives in HTTP.
 
 **`lesson-05-container-openshell`** — the survivors that a container could only kill
 by killing all network, plus the one it could never kill. The motivating scenario
 is lesson 1's **web injection**, now made containable: a browsing agent *must* have
 egress to read pages, so the previous rungs faced a false choice — turn network off
 and break the agent, or leave it on and let the injected payload exfiltrate. That
-choice is not asserted here, it is on the scoreboard: lessons 2, 3 and 4 each run
-both ways, and each loses attacks 2, 4, 5 and 6 the moment the network comes on.
-Lesson 5 is the first rung that keeps them closed **with the network still on**.
+choice is not asserted here, it is on the scoreboard: lessons 2, 3 and 4 all run
+with the network an agent needs, and all three leave attacks 2, 4, 5 and 6 open —
+a plain container, a user-space kernel and a per-container VM alike.
+Lesson 5 is the first rung that closes them **with the network still on**.
 OpenShell runs the agent under a declarative policy on ordinary runc with egress
 **left on** but **per-binary and method-aware**: the agent still `GET`s the sites it
 needs, while the injected `POST` to the attacker, the `pip` install from a

@@ -11,6 +11,12 @@ under the default runtime (``crun``/``runc``) and once under ``runsc``, with byt
 both. Reading lesson 2's recorded numbers instead would compare two machines as well as two
 runtimes, and this is a tutorial about not doing that.
 
+Like every rung of this ladder it runs with the engine's **ordinary network**, because an agent that
+cannot reach a model API is not an agent. That matters more here than it looks: gVisor's boundary is
+the syscall interface, so it collapses the kernel rows and leaves the network ones exactly where a
+plain container left them. A stronger *kernel* boundary does not buy a network policy, and measuring
+this rung online is what makes that visible instead of assertable.
+
 Two things this lesson measures that are easy to get wrong:
 
 * **The syscall tax is real and the CPU tax is not.** Every syscall now traverses a user-space
@@ -39,9 +45,6 @@ from scorecard import Card, Finding, render_report
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "sandboxing-tutorial/agent:latest"
 RESULTS = REPO_ROOT / "results" / "lesson-03.json"
-#: The same rung with the network an agent actually needs — see lesson 2 for why this is a separate
-#: card rather than a second findings list.
-RESULTS_NET_ON = REPO_ROOT / "results" / "lesson-03-network-on.json"
 GROUPS = "reach,abuse,kernel,cost"
 # Attack 4's target, inherited from the environment rather than hardcoded, and forwarded into every
 # sandbox below. `infra/run.sh` points it at the cloud this box actually runs on: Scaleway answers on
@@ -63,13 +66,6 @@ HARDENING = [
     "--pids-limit", "128",
     "--cpus", "1",
 ]  # fmt: skip
-
-#: Byte-identical to lesson 2's split, for the same reason: the network model is a variable this
-#: ladder measures, not a constant it assumes. gVisor is a *kernel* boundary — it reads syscalls,
-#: not HTTP — so the network-on run is expected to reopen exactly what it reopened for a plain
-#: container, and demonstrating that is the point rather than a disappointment.
-NET_OFF = ["--network", "none"]
-NET_ON: list[str] = []
 
 
 def banner(text: str) -> None:
@@ -135,13 +131,17 @@ def selinux_enforcing() -> bool:
         return False
 
 
-def run_suite(eng: list[str], runtime: str | None, net: list[str] = NET_OFF) -> tuple[Card, int]:
+def run_suite(eng: list[str], runtime: str | None) -> tuple[Card, int]:
     """Run the suite once. Returns the card and the container's exit status.
 
     The exit status is not decoration. It is the only evidence left when the sandbox dies mid-suite,
     and under gVisor at these limits it does.
+
+    No network flag is passed, deliberately: the engine's default is what an agent that must reach a
+    model API is given, and it is what both sides of Part 3's comparison get, so a row that moves
+    there moved because of the runtime.
     """
-    argv = [*eng, "run", "--rm", "--user", "1000:1000", *HARDENING, *net]
+    argv = [*eng, "run", "--rm", "--user", "1000:1000", *HARDENING]
     if runtime:
         argv += ["--runtime", runtime]
         if selinux_enforcing():
@@ -188,6 +188,11 @@ def assert_gvisor_engaged(card: Card) -> None:
     This is the assertion the whole repo exists to make. A container that silently fell back to runc
     exits 0 and prints a perfectly plausible scorecard; the *only* thing that distinguishes it is the
     sandbox's own answer to "whose kernel are you".
+
+    Egress is asserted here too, pointing the other way. If this sandbox came up with no network —
+    a broken rootless stack, a missing pasta/slirp4netns — every network row would read BLOCKED and
+    the page would credit gVisor with stopping exfiltration it never touched. gVisor does not read
+    HTTP, so those rows staying open is the *expected* result and must not be faked by an accident.
     """
     identity = str(card.get("kernel_identity") or {}).lower()
     modules = card.get("sys_module_count")
@@ -195,6 +200,7 @@ def assert_gvisor_engaged(card: Card) -> None:
         "the kernel identifies as gVisor's own": "gvisor" in identity,
         "/sys/module is empty (no host modules to enumerate)": (modules or {}).get("value") == 0,
         "/proc/kallsyms is unreadable": card.contained("kallsyms_readable") is True,
+        "egress genuinely OPEN (the network this rung claims to measure)": card.contained("exfiltrate") is False,
     }
     for label, ok in checks.items():
         print(f"    [{'OK' if ok else '!!'}] {label}")
@@ -233,61 +239,35 @@ def main() -> None:
     print(gvisor.cost_delta(plain, "container", "+ gVisor"))
     print("\n  Read those two rows together. Syscall-bound work pays a real multiple; arithmetic pays")
     print("  essentially nothing. An agent waiting on a model is nearly all of the latter.")
+    print("\n  Note WHICH rows moved: the kernel ones, and not one network row. Both sides ran with")
+    print("  the same ordinary network, so the network rows sit identical on each and drop out of")
+    print("  the diff entirely — which is the finding, not a gap. gVisor's boundary is the syscall")
+    print("  interface; it never had an opinion about HTTP.")
 
-    banner("Part 4 — The same gVisor sandbox, with the network a real agent needs")
-    print("  Everything above ran with --network none. Re-running under runsc with the engine's")
-    print("  ordinary network — same runtime, same hardening, only the network differs.\n")
-    gv_net, gv_net_rc = run_suite(eng, "runsc", NET_ON)
-    gv_net = merge_sandbox_death(gv_net, gv_net_rc, "runsc")
-    print(gv_net.render())
-    net_blocked, net_applicable = gv_net.tally()
-    print(f"\n  boundaries that held: {net_blocked}/{net_applicable}   (egress-off scored {blocked}/{applicable})")
-
-    banner("Assert gVisor engaged in the network-on run too")
-    assert_gvisor_engaged(gv_net)
-    if gv_net.contained("exfiltrate") is not False:
-        sys.exit("  network-on assertion FAILED — egress was not actually open; this run proves nothing.")
-    print("    [OK] egress genuinely OPEN (the mode under test actually engaged)")
-
-    print("\n  What the network bought the attacker:\n")
-    print(gv_net.diff_against(gvisor, "egress-off", "network-on"))
-    print("  Note WHICH rows moved: the network ones, and not one kernel row. gVisor's boundary is")
-    print("  the syscall interface, so it holds attack 8 exactly as before — and it never had an")
-    print("  opinion about HTTP, so it reopens the same rows a plain container does. A stronger")
-    print("  kernel boundary does not buy a network policy. That is lesson 5, on a different axis.")
-
-    banner("Part 5 — What is still open (the next lessons' reason to exist)")
+    banner("Part 4 — What is still open (the next lessons' reason to exist)")
     for f in gvisor.reached():
         print(f"    {f['name']:<20} {f['value']}")
-    print("\n  gVisor closed attack 8 and nothing else — it has no idea WHICH binary made a request,")
-    print("  WHICH HTTP method it used, and it keeps no record that anything was attempted. Those are")
-    print("  lesson 5 (OpenShell), and they are a different axis, not a weaker version of this one.")
-    print("  Lesson 4 reaches the same kernel result by a completely different route — a real guest")
+    print("\n  gVisor closed attack 8 and nothing else. Every network row a plain container left")
+    print("  open is still open here, because a stronger KERNEL boundary does not buy a network")
+    print("  policy: runsc has no idea WHICH binary made a request, WHICH HTTP method it used, and")
+    print("  it keeps no record that anything was attempted. Those are lesson 5 (OpenShell), and")
+    print("  they are a different axis, not a weaker version of this one.")
+    print("\n  Lesson 4 reaches the same kernel result by a completely different route — a real guest")
     print("  kernel in a VM — and that difference matters later: Kata keeps Landlock, gVisor drops it.")
 
-    gv_net.save(
-        RESULTS_NET_ON,
-        lesson="lesson-03-container-gvisor",
-        mode="network-on",
-        engine=" ".join(eng),
-        node_kernel=platform.release(),
-        boundary="hardened rootless container + gVisor (runsc), ordinary network",
-        runtime_exit_code=gv_net_rc,
-    )
     gvisor.save(
         RESULTS,
         lesson="lesson-03-container-gvisor",
-        mode="egress-off",
+        mode="network-on",
         engine=" ".join(eng),
         # The kernel this rung ran on. Recorded on every lesson so the overall report can
         # tell when two rungs were measured on different machines — without it the guard has
         # nothing to compare and silently passes.
         node_kernel=platform.release(),
-        boundary="hardened rootless container + gVisor (runsc)",
+        boundary="hardened rootless container + gVisor (runsc), ordinary network",
         runtime_exit_code=gv_rc,
     )
     print(f"\n  scorecard written to {RESULTS.relative_to(REPO_ROOT)}")
-    print(f"                   and {RESULTS_NET_ON.relative_to(REPO_ROOT)}")
     report = Path(__file__).parent / "report.html"
     if render_report(REPO_ROOT):
         print(f"  report written to  {report.relative_to(REPO_ROOT)}")

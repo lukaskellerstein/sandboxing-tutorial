@@ -93,39 +93,38 @@ The lesson runs the suite **twice on this box, in the same minute**: once under
 against lesson 2's recorded file would compare two machines as well as two
 runtimes, and this tutorial exists to avoid exactly that.
 
-## Part 4 turns the network on, and gVisor does not help
+## gVisor does not help on the network axis
 
-Everything above runs with `--network none`. Part 4 re-runs the identical suite
-under `runsc` with the engine's ordinary network — same runtime, same hardening,
-only the network differs — because an agent that cannot reach a model API is not
-an agent, and the offline column describes a deployment nobody ships.
+Both runs use the engine's ordinary network, like every rung of this ladder — an
+agent that cannot reach a model API is not an agent, and `--network none` would
+score this rung 13/13 while describing a deployment nobody ships.
+
+That matters here more than anywhere. Read *which* rows separate `runsc` from a
+plain container:
 
 ```text
-attack               egress-off    network-on
-exfiltrate           BLOCKED       REACHED     open
-cloud_metadata       BLOCKED       REACHED     200
-malicious_package    BLOCKED       REACHED     index-reached
-reverse_shell        BLOCKED       REACHED     stage=no-stage-url,egress=open,bind=ok
-   (every kernel row: unchanged)
+attack               container     + gVisor
+kernel_identity      REACHED       BLOCKED     4.19.0-gvisor
+sys_module_count     REACHED       BLOCKED     0
+   (every network row: unchanged)
 
-13/13  ->  9/13
+7/13  ->  9/13
 ```
 
-Read *which* rows moved. **Not one kernel row did** — gVisor's boundary is the
-syscall interface and it holds attack 8 exactly as before. What moved is the four
-network attacks, and they moved for the same reason they moved one rung down: a
-user-space kernel never had an opinion about HTTP. It cannot see *which binary*
-opened the socket or *which method* it used, so it cannot tell the model-API call
-the agent needs from the exfiltration it does not.
+**Not one network row moved.** gVisor's boundary is the syscall interface, so it
+collapses attack 8 and leaves attacks 2, 4, 5 and 6 exactly where a plain
+container left them — a user-space kernel never had an opinion about HTTP. It
+cannot see *which binary* opened the socket or *which method* it used, so it
+cannot tell the model-API call the agent needs from the exfiltration it does not.
 
 That is the lesson's real boundary statement: **a stronger kernel boundary buys
 nothing on the network axis.** Lesson 4 pays far more for kernel isolation — a
-whole VM — and gets exactly the same four rows back. Only lesson 5 closes them,
-and it does so on ordinary `runc` with no kernel boundary at all.
+whole VM — and gets exactly the same four rows left open. Only lesson 5 closes
+them, and it does so on ordinary `runc` with no kernel boundary at all.
 
-The lesson asserts gVisor is still engaged in the network-on run, and refuses to
-report unless egress was demonstrably open — a second sandbox that quietly came up
-offline would show these four rows BLOCKED and look like a result.
+The lesson refuses to report unless egress was demonstrably open, alongside the
+gVisor-identity checks. A sandbox that quietly came up offline would show those
+four rows BLOCKED and credit `runsc` with stopping exfiltration it never touched.
 
 ## Two results that are easy to get wrong
 
@@ -152,12 +151,12 @@ default runtime on the same box, in the same minute:
 ```text
 attack               container     + gVisor      changed?
 kernel_identity      REACHED       BLOCKED       <-- closed    6.8.0-106-generic -> 4.19.0-gvisor
-sys_module_count     REACHED       BLOCKED       <-- closed    179 -> 0
+sys_module_count     REACHED       BLOCKED       <-- closed    193 -> 0
    (every other row: unchanged)
 
 probe            container      + gVisor     ratio
-syscall_ms            68.0         274.1     4.03x
-cpu_ms               119.2         119.2     1.00x
+syscall_ms            75.4         190.7     2.53x
+cpu_ms               123.2         131.8     1.07x
 ```
 
 **Exactly two rows move**, and they are the two a container could never move. Note
@@ -171,11 +170,13 @@ column keeps: `io_uring_setup` answers `ENOSYS` — **not implemented, a user-sp
 kernel** — where the plain container answered `EPERM`, *refused, capability
 dropped*. Same verdict, different boundary.
 
-Those readings are the `egress-off` run. The headline score on `report.html` is
-the `network-on` one — **9/13** — for the reason Part 4 sets out.
+Both sides of that comparison ran with the same ordinary network, so the network
+rows sit identical on each and drop out of the diff entirely. That is the finding,
+not a gap in the table: **9/13**, two rows better than the container below it, and
+both of those rows are kernel rows.
 
-**Still open**: the four network attacks once the agent is online, plus which
-binary made a request, which HTTP method it used, and any record that it happened.
+**Still open**: the four network attacks, plus which binary made a request, which
+HTTP method it used, and any record that it happened.
 
 ## Next
 

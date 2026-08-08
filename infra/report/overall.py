@@ -59,18 +59,6 @@ def load_reports() -> list[dict]:
     return reports
 
 
-def egress_off_view(r: dict) -> dict | None:
-    """The ``--network none`` measurement, for the rungs that have one.
-
-    ``render.py`` already makes every report's top level the network-on run, so the headline
-    ladder needs no projection at all. Only this secondary view does, and lessons 1 and 5 simply
-    have none: lesson 1 has no boundary to switch off, and OpenShell's sandbox is online and
-    policed rather than offline.
-    """
-    off = r.get("egress_off")
-    return {**r, **{k: off[k] for k in ("boundary", "blocked", "scored", "findings")}} if off else None
-
-
 def matrix(reports: list[dict]) -> str:
     order: list[str] = []
     for r in reports:
@@ -207,21 +195,6 @@ a { color:var(--accent); }
 def render(reports: list[dict]) -> str:
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
     listed = ", ".join(short(r["lesson"]) for r in reports) or "none"
-    egress_off = [v for v in (egress_off_view(r) for r in reports) if v]
-    egress_block = (
-        ""
-        if not egress_off
-        else f"""
-<h2>The same rungs with egress switched off</h2>
-<p class="note">This is the column a container scoreboard usually shows, and it is the reason
-containers look stronger than they are: <code>--network none</code> closes attacks 2, 4, 5 and 6
-for free. It is a real configuration — a batch job with no network is a fine use of it — but it
-cannot run an agent, so it is the secondary view here rather than the headline.
-Lessons 1 and 5 are absent by construction: lesson 1 has no boundary to switch off, and
-OpenShell's sandbox is online and policed rather than offline.</p>
-{matrix(egress_off)}
-"""
-    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -238,12 +211,12 @@ Each probe is explained in <code>ATTACKS.md</code>.</p>
 <h2>The ladder — with the network a real agent needs</h2>
 <p class="note"><strong>BLOCKED</strong> = the boundary stopped the attack.
 <strong>SUCCEEDED</strong> = the attack got what it wanted. Hover a cell for the raw reading.<br>
-This is the headline table because it is the only one that describes a deployment anyone ships:
-an agent that cannot reach a model API is not an agent. Read the network rows across the row —
-the container, gVisor and Kata all reopen them, because none of the three reads HTTP, and a
-stronger <em>kernel</em> boundary buys nothing on that axis.</p>
+Every rung is measured with the network on, because that is the only configuration that describes
+a deployment anyone ships: an agent that cannot reach a model API is not an agent. Read the network
+rows across the row — the container, gVisor and Kata all leave them open, because none of the three
+reads HTTP, and a stronger <em>kernel</em> boundary buys nothing on that axis. Only lesson 5 closes
+them, with the network still on.</p>
 {matrix(reports)}
-{egress_block}
 <h2>What changed, rung by rung</h2>
 <p class="note">The rows that stay open are the reason the next lesson exists.</p>
 {diffs(reports)}

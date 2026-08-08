@@ -11,6 +11,12 @@ podman rather than passing a different ``--runtime`` to the engine the last two 
 is not incidental: it is precisely the argument for chapter 3, where the cluster already runs
 containerd and Kata collapses back into a single field.
 
+Like every rung of this ladder it runs with the engine's **ordinary network**, and on this rung that
+produces the sharpest result in the tutorial: the *strongest* kernel boundary here — a separate guest
+kernel in a separate VM, with a per-container hypervisor — leaves attacks 2, 4, 5 and 6 exactly as
+open as a plain ``podman run`` does. A VM boundary is not a network policy, because that distinction
+lives in HTTP and no kernel reads HTTP.
+
 **Proving a VM booted needs care.** ``uname -r`` differing from the node is good evidence here, but
 it is not proof in general — on RHEL-family hosts the guest kernel is built from the same base and
 the strings match. The load-bearing check is **DMI**: a virtual machine reports its hypervisor as
@@ -33,8 +39,6 @@ from scorecard import Card, Finding, render_report
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "sandboxing-tutorial/agent:latest"
 RESULTS = REPO_ROOT / "results" / "lesson-04.json"
-#: The same rung with the network an agent actually needs — see lesson 2 for why it is its own card.
-RESULTS_NET_ON = REPO_ROOT / "results" / "lesson-04-network-on.json"
 GROUPS = "reach,abuse,kernel,cost"
 # Attack 4's target, inherited from the environment rather than hardcoded, and forwarded into every
 # sandbox below. `infra/run.sh` points it at the cloud this box actually runs on: Scaleway answers on
@@ -56,13 +60,6 @@ HARDENING = [
     "--pids-limit", "128",
     "--cpus", "1",
 ]  # fmt: skip
-
-#: The network model as a measured variable, exactly as in lessons 2 and 3. Kata's boundary is a
-#: real guest kernel in a VM — the strongest kernel isolation on this ladder — and it still has no
-#: opinion about HTTP, so the network-on run reopens what it reopens everywhere else. That the
-#: *strongest* kernel boundary does not help here is the sharpest form of lesson 5's argument.
-NET_OFF = ["--net", "none"]
-NET_ON: list[str] = []
 
 
 def banner(text: str) -> None:
@@ -114,8 +111,11 @@ def ensure_image(nerdctl: list[str]) -> None:
     subprocess.run([*nerdctl, "build", "-t", IMAGE, str(build_dir)], check=True, capture_output=True)
 
 
-def run_suite(nerdctl: list[str], runtime: str | None, net: list[str] = NET_OFF) -> tuple[Card, int]:
-    argv = [*nerdctl, "run", "--rm", "--user", "1000:1000", *HARDENING, *net]
+def run_suite(nerdctl: list[str], runtime: str | None) -> tuple[Card, int]:
+    # No --net flag, deliberately: the default network is what an agent that must reach a model API
+    # is given, and it is what both sides of Part 3's comparison get, so a row that moves there
+    # moved because of the runtime rather than the network.
+    argv = [*nerdctl, "run", "--rm", "--user", "1000:1000", *HARDENING]
     if runtime:
         argv += ["--runtime", runtime]
     argv += ["-e", f"PROBE_GROUPS={GROUPS}", "-e", f"PROBE_NODE_KERNEL={platform.release()}", *METADATA_ENV, IMAGE]
@@ -202,19 +202,25 @@ def vm_evidence(nerdctl: list[str]) -> dict[str, str]:
 _HYPERVISOR_VENDORS = ("qemu", "kvm", "cloud hypervisor", "bochs", "amazon ec2")
 
 
-def assert_vm_engaged(evidence: dict[str, str], node_kernel: str, node_cpus: int) -> None:
+def assert_vm_engaged(card: Card, evidence: dict[str, str], node_kernel: str, node_cpus: int) -> None:
     """Prove a real VM booted — from inside it, and from more than one kind of evidence.
 
-    Only the kernel check is fatal, and deliberately so. A guest kernel identical to the node's means
-    no VM was created and the whole lesson is a lie. The other two are corroboration whose absence is
-    worth printing but is not proof of failure: DMI can be masked, and a Kata config could in
-    principle hand the guest every CPU the node has.
+    Two checks are fatal. A guest kernel identical to the node's means no VM was created and the
+    whole lesson is a lie. And egress must be genuinely open: if this VM came up with no network,
+    every network row would read BLOCKED and the page would credit a per-container hypervisor with
+    stopping exfiltration it never touched — the exact false comfort this rung exists to refute,
+    since its headline finding is that a VM boundary buys *nothing* on the network axis.
+
+    The remaining two are corroboration whose absence is worth printing but is not proof of failure:
+    DMI can be masked, and a Kata config could in principle hand the guest every CPU the node has.
     """
     vendor = evidence["DMI sys_vendor"].lower()
     kernel_differs = evidence["guest kernel"] not in ("?", node_kernel)
+    egress_open = card.contained("exfiltrate") is False
 
     checks = {
         f"guest kernel {evidence['guest kernel']} != node kernel {node_kernel}": kernel_differs,
+        "egress genuinely OPEN (the network this rung claims to measure)": egress_open,
         f"DMI names a hypervisor, not a motherboard ({evidence['DMI sys_vendor']})": any(
             v in vendor for v in _HYPERVISOR_VENDORS
         ),
@@ -226,6 +232,8 @@ def assert_vm_engaged(evidence: dict[str, str], node_kernel: str, node_cpus: int
         print(f"    [{'OK' if ok else '..'}] {label}")
     if not kernel_differs:
         sys.exit("  Kata assertion FAILED — the container ran on the node kernel. No VM was created.")
+    if not egress_open:
+        sys.exit("  Kata assertion FAILED — egress was not actually open; this run proves nothing.")
 
 
 #: What `--memory` asks for, in MB. Kept next to HARDENING so the two cannot drift apart.
@@ -315,7 +323,7 @@ def main() -> None:
     for k, v in evidence.items():
         print(f"    {k:<16} {v}")
     print()
-    assert_vm_engaged(evidence, node_kernel, len(os.sched_getaffinity(0)))
+    assert_vm_engaged(kata, evidence, node_kernel, len(os.sched_getaffinity(0)))
 
     banner("A limit means something different inside a VM — read this before Part 3")
     report_limit_semantics(kata, evidence)
@@ -332,34 +340,19 @@ def main() -> None:
     print("\n  Note what is NOT in that table: the per-container VM boot. It is real, it is the")
     print("  headline objection to Kata, and it is paid once at startup rather than per syscall —")
     print("  which is why a syscall-tax comparison flatters Kata and a startup comparison does not.")
+    print("\n  Note WHICH rows moved: the kernel ones, and not one network row. Both sides ran with")
+    print("  the same ordinary network, so the network rows sit identical on each and drop out of")
+    print("  the diff — which is the finding rather than a gap.")
 
-    banner("Part 4 — The same VM, with the network a real agent needs")
-    print("  Everything above ran with --net none. Re-running inside Kata with the ordinary")
-    print("  network — same guest kernel, same hardening, only the network differs.\n")
-    kata_net, kata_net_rc = run_suite(nerdctl, KATA_RUNTIME, NET_ON)
-    kata_net = merge_sandbox_death(kata_net, kata_net_rc, KATA_RUNTIME)
-    print(kata_net.render())
-    net_blocked, net_applicable = kata_net.tally()
-    print(f"\n  boundaries that held: {net_blocked}/{net_applicable}")
-
-    banner("Assert the VM booted in the network-on run too")
-    if kata_net.contained("kernel_identity") is not True:
-        sys.exit("  network-on assertion FAILED — no guest kernel; this was not Kata. Not reporting a result.")
-    if kata_net.contained("exfiltrate") is not False:
-        sys.exit("  network-on assertion FAILED — egress was not actually open; this run proves nothing.")
-    print("    [OK] still a guest kernel, distinct from the node's")
-    print("    [OK] egress genuinely OPEN (the mode under test actually engaged)")
-
-    print("\n  What the network bought the attacker:\n")
-    print(kata_net.diff_against(kata, "egress-off", "network-on"))
-    print("  This is the sharpest version of the whole argument. Kata is the STRONGEST kernel")
-    print("  boundary on this ladder — a separate guest kernel in a separate VM — and it reopens")
-    print("  exactly the rows a plain container reopens, because a VM boundary is not a network")
-    print("  policy. Spending a VM per container buys attack 8. It does not buy attacks 2, 4, 5, 6.")
-
-    banner("Part 5 — What is still open")
+    banner("Part 4 — What is still open")
     for f in kata.reached():
         print(f"    {f['name']:<20} {f['value']}")
+    print("\n  This is the sharpest version of the whole tutorial's argument. Kata is the STRONGEST")
+    print("  kernel boundary on this ladder — a separate guest kernel in a separate VM, with a")
+    print("  per-container hypervisor — and attacks 2, 4, 5 and 6 are left exactly as open as a")
+    print("  plain `podman run` leaves them. A VM boundary is not a network policy: that distinction")
+    print("  lives in HTTP, and no kernel reads HTTP. Spending a VM per container buys attack 8. It")
+    print("  does not buy attacks 2, 4, 5 or 6, and no amount of kernel isolation ever will.")
     print("\n  Exactly the same rows gVisor left open, because Kata is strong in the same column:")
     print("  neither knows WHICH binary made a request or WHICH method it used, and neither writes")
     print("  anything down. That is lesson 5.")
@@ -372,27 +365,15 @@ def main() -> None:
     kata.save(
         RESULTS,
         lesson="lesson-04-container-kata",
-        mode="egress-off",
+        mode="network-on",
         engine="nerdctl/containerd",
-        boundary="hardened container + Kata Containers (per-container VM)",
+        boundary="hardened container + Kata Containers (per-container VM), ordinary network",
         node_kernel=node_kernel,
         vm_evidence=evidence,
         guest_sysctls=sysctls,
         runtime_exit_code=kata_rc,
     )
-    kata_net.save(
-        RESULTS_NET_ON,
-        lesson="lesson-04-container-kata",
-        mode="network-on",
-        engine="nerdctl/containerd",
-        boundary="hardened container + Kata Containers, ordinary network",
-        node_kernel=node_kernel,
-        vm_evidence=evidence,
-        guest_sysctls=sysctls,
-        runtime_exit_code=kata_net_rc,
-    )
     print(f"\n  scorecard written to {RESULTS.relative_to(REPO_ROOT)}")
-    print(f"                   and {RESULTS_NET_ON.relative_to(REPO_ROOT)}")
     report = Path(__file__).parent / "report.html"
     if render_report(REPO_ROOT):
         print(f"  report written to  {report.relative_to(REPO_ROOT)}")

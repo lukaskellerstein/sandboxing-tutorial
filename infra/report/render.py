@@ -100,16 +100,10 @@ def esc(value: object) -> str:
     return html.escape(str(value))
 
 
-#: Filename infix for the second network mode. A rung that can be run both ways writes two cards of
-#: the identical shape rather than one card with two findings lists, so every consumer here keeps
-#: reading one card and simply asks which mode it holds.
-NET_ON_SUFFIX = "-network-on"
-
-
-def load_card(lesson: str, suffix: str = "") -> dict | None:
+def load_card(lesson: str) -> dict | None:
     """A lesson's scorecard, by lesson name. `lesson-03-container-gvisor` -> results/lesson-03.json."""
     number = lesson.split("-")[1]
-    path = RESULTS / f"lesson-{number}{suffix}.json"
+    path = RESULTS / f"lesson-{number}.json"
     if not path.exists():
         return None
     try:
@@ -122,46 +116,20 @@ def load_card(lesson: str, suffix: str = "") -> dict | None:
 # --- the machine-readable twin -----------------------------------------------
 
 
-def build_json(card: dict, net_card: dict | None = None) -> dict:
+def build_json(card: dict) -> dict:
     """What ``overall.py`` consumes. Verdicts are resolved here, once.
 
-    **The network-on measurement is always the primary one here**, for every rung that has both.
-    That is not a presentation choice: the top-level findings are what ``overall.py`` compares rung
-    against rung, and lessons 1 and 5 have only a network-on measurement. Leading with egress-off
-    for lessons 2-4 would silently compare lesson 1's online baseline against lesson 2's offline
-    container — a mixed-mode diff that reads like a boundary result and is really a mode artefact.
-    The egress-off card is kept alongside, under ``egress_off``.
+    **Every rung is measured with the network an agent actually needs**, and that uniformity is what
+    makes the top-level findings comparable rung against rung. A rung measured at ``--network none``
+    would score several attacks higher for a reason that has nothing to do with its boundary, and
+    diffing it against an online neighbour would read like a boundary result while being a mode
+    artefact.
     """
-    primary = net_card or card
-    secondary = card if net_card else None
+    primary = card
     blocked, scored = tally(primary)
-    out_off = None
-    if secondary is not None:
-        off_blocked, off_scored = tally(secondary)
-        out_off = {
-            "mode": secondary.get("mode", "egress-off"),
-            "boundary": secondary.get("boundary", ""),
-            "blocked": off_blocked,
-            "scored": off_scored,
-            # Same enriched shape as the primary findings below, so `overall.py` can build a matrix
-            # from either mode with one code path instead of two.
-            "findings": [
-                {
-                    "name": f["name"],
-                    "attack": WHY.get(f["name"], ("?", ""))[0],
-                    "why": WHY.get(f["name"], ("", ""))[1],
-                    "group": f.get("group", "other"),
-                    "value": f.get("value"),
-                    "detail": f.get("detail", ""),
-                    "verdict": verdict_of(f),
-                }
-                for f in secondary["findings"]
-            ],
-        }
     return {
         "lesson": primary["lesson"],
         "mode": primary.get("mode", ""),
-        "egress_off": out_off,
         "boundary": primary.get("boundary", ""),
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "complete": primary.get("complete", True),
@@ -274,48 +242,7 @@ a { color:var(--accent); }
 """
 
 
-def egress_off_section(primary: dict, off_card: dict | None) -> str:
-    """The same rung with egress switched off — the flattering number, shown second and explained.
-
-    The headline of this page is the network-on run, because that is the deployment a reader will
-    actually build. This section exists so the more familiar ``--network none`` figure is still
-    here, next to the reason it is higher: it closes attacks 2, 4, 5 and 6 for free by removing the
-    network an agent needs to work at all.
-    """
-    if off_card is None:
-        return ""
-    off_blocked, off_scored = tally(off_card)
-    blocked, scored = tally(primary)
-    reopened = [
-        f["name"]
-        for f in primary["findings"]
-        if verdict_of(f) == "SUCCEEDED"
-        and any(g["name"] == f["name"] and verdict_of(g) == "BLOCKED" for g in off_card["findings"])
-    ]
-    lost = (
-        "<p>Nothing differs — this rung's verdicts do not depend on the network model.</p>"
-        if not reopened
-        else "<p><strong>Blocked here, but reopened the moment the agent has a network:</strong> "
-        + ", ".join(f"<code>{esc(n)}</code>" for n in reopened)
-        + f" — {len(reopened)} attack(s). That gap is the difference between the two numbers, and"
-        " it is why this is the secondary view rather than the headline.</p>"
-    )
-    return f"""
-<h2>The same rung with egress switched off</h2>
-<p class="sub">Same image, same hardening, same runtime — only the network differs.
-<code>{esc(primary.get("boundary", ""))}</code> above, <code>{esc(off_card.get("boundary", ""))}</code> here.</p>
-<p class="score">{off_blocked} <small>of {off_scored} attacks blocked &nbsp;·&nbsp;
-with the network an agent needs it is {blocked} of {scored}</small></p>
-{lost}
-{probe_tables(off_card)}
-"""
-
-
-def render_html(card: dict, net_card: dict | None = None) -> str:
-    # The network-on run heads the page whenever the rung has one — see build_json's docstring.
-    primary = net_card or card
-    off_card = card if net_card else None
-    card = primary
+def render_html(card: dict) -> str:
     blocked, scored = tally(card)
     pct = round(100 * blocked / scored) if scored else 0
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
@@ -361,7 +288,6 @@ This page covers <strong>this lesson only</strong>. To compare rungs, build the 
 <dl class="meta">{"".join(meta)}</dl>
 
 {probe_tables(card)}
-{egress_off_section(card, off_card)}
 </div></body></html>
 """
 
@@ -374,10 +300,9 @@ def render_one(lesson: str) -> Path | None:
     if not folder.is_dir():
         print(f"  skipping {lesson}: {folder} does not exist", file=sys.stderr)
         return None
-    net_card = load_card(lesson, NET_ON_SUFFIX)
-    (folder / "report.json").write_text(json.dumps(build_json(card, net_card), indent=2) + "\n", encoding="utf-8")
+    (folder / "report.json").write_text(json.dumps(build_json(card), indent=2) + "\n", encoding="utf-8")
     out = folder / "report.html"
-    out.write_text(render_html(card, net_card), encoding="utf-8")
+    out.write_text(render_html(card), encoding="utf-8")
     return out
 
 
