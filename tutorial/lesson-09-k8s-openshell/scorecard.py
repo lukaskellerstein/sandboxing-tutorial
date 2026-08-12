@@ -16,8 +16,10 @@ carries ``complete = False`` from then on.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TypedDict
 
@@ -35,9 +37,64 @@ class Finding(TypedDict):
 SENTINEL = "SCORECARD_JSON"
 FINDING_SENTINEL = "FINDING_JSON"
 
-_VERDICT: dict[bool | None, str] = {True: "BLOCKED", False: "REACHED", None: "n/a"}
-_VERDICT_EVIDENCE: dict[bool | None, str] = {True: "RECORDED", False: "NO RECORD", None: "n/a"}
+# The verdict vocabulary is infra/report/render.py's, verbatim, so the terminal scorecard and the
+# HTML report never say different words for the same result: BLOCKED the boundary stopped it,
+# SUCCEEDED it got through, INFO measured-only. Every group uses it — the report folds the evidence
+# rows (RECORDED / NO RECORD) into these same three, so this deliberately drops the old evidence
+# special case to match. Change this pair only alongside render.py's, or the two views drift apart.
+_VERDICT: dict[bool | None, str] = {True: "BLOCKED", False: "SUCCEEDED", None: "INFO"}
+#: ANSI codes per verdict — green / red / dim, the report's --ok / --bad / --dim.
+_VERDICT_ANSI = {"BLOCKED": "32", "SUCCEEDED": "31", "INFO": "2"}
 _GROUPS = ("reach", "abuse", "kernel", "policy", "evidence", "cost")
+
+#: Lesson wall clock. main.py imports this module before it does any work, so "since import" is the
+#: lesson's own run time to within an import — and monotonic survives a clock step mid-run.
+_LESSON_T0 = time.monotonic()
+
+
+def lesson_elapsed() -> float:
+    """Seconds since this lesson started — measured from this module's import."""
+    return time.monotonic() - _LESSON_T0
+
+
+def fmt_duration(seconds: float) -> str:
+    """`1h07m` / `1m03s` / `47s` — the shape infra/lib.sh and ctl.py already print, one vocabulary."""
+    s = int(round(seconds))
+    if s >= 3600:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    if s >= 60:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s}s"
+
+
+def _color_on() -> bool:
+    """Colour only for a human. NO_COLOR wins; then CLICOLOR_FORCE (which infra/run.sh sets when its
+    own stdout is a terminal); else isatty. So a captured run log and the TUI pane — which cannot
+    render ANSI — stay clean, the same escapes-only-for-a-terminal rule ctl.py follows."""
+    if os.environ.get("NO_COLOR") is not None:
+        return False
+    if os.environ.get("CLICOLOR_FORCE") not in (None, "", "0"):
+        return True
+    return sys.stdout.isatty()
+
+
+def _ansi(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if _color_on() else text
+
+
+def _paint(verdict: str) -> str:
+    return _ansi(_VERDICT_ANSI[verdict], verdict)
+
+
+def _dim(text: str) -> str:
+    return _ansi("2", text)
+
+
+def _cell(contained: bool | None, width: int = 12) -> str:
+    """A verdict left-justified to `width` VISIBLE columns, coloured without shifting the column: the
+    escape bytes are padded around, never counted, so a `:<12` comparison layout survives the colour."""
+    word = _VERDICT[contained]
+    return _paint(word) + " " * max(0, width - len(word))
 
 
 class Card:
@@ -109,9 +166,9 @@ class Card:
                 continue
             lines.append(f"  [{group}]")
             for f in members:
-                verdict = (_VERDICT_EVIDENCE if group == "evidence" else _VERDICT)[f["contained"]]
+                verdict = _VERDICT[f["contained"]]
                 detail = f"  {f['detail']}" if f["detail"] else ""
-                lines.append(f"    {f['name']:<{width}}  {str(f['value']):<26} {verdict}{detail}")
+                lines.append(f"    {f['name']:<{width}}  {str(f['value']):<26} {_paint(verdict)}{detail}")
         return "\n".join(lines)
 
     def diff_against(self, prev: Card, prev_label: str, cur_label: str) -> str:
@@ -124,8 +181,10 @@ class Card:
             before, after = prev.contained(name), self.contained(name)
             if before is None:
                 continue
-            mark = "" if before == after else "  <-- closed" if after else "  <-- OPENED"
-            lines.append(f"  {name:<{width}}  {_VERDICT[before]:<12}  {_VERDICT[after]:<12}{mark}")
+            # A row that closed (this boundary now holds) is the good news, in green; one that OPENED
+            # is a regression, in red — the same green/blocked, red/succeeded reading as the cells.
+            mark = "" if before == after else (_ansi("32", "  <-- closed") if after else _ansi("31", "  <-- OPENED"))
+            lines.append(f"  {name:<{width}}  {_cell(before)}  {_cell(after)}{mark}")
         return "\n".join(lines)
 
     def cost_delta(self, prev: Card, prev_label: str, cur_label: str) -> str:
@@ -148,7 +207,16 @@ class Card:
 
     def save(self, path: Path, **meta: object) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {**meta, "complete": self.complete, "findings": self.findings}
+        # duration_s reaches results/<lesson>.json — and through it report.html / report.json — from
+        # here, so no lesson has to thread the timing by hand; an explicit duration_s in meta still
+        # wins. Measured from this module's import (main.py's first act) to now: the lesson's own
+        # wall clock. render_report() prints the same number for the terminal.
+        payload = {
+            "duration_s": round(lesson_elapsed(), 1),
+            **meta,
+            "complete": self.complete,
+            "findings": self.findings,
+        }
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     @classmethod
@@ -174,6 +242,10 @@ def render_report(repo_root: Path) -> Path | None:
     A failure here never fails the lesson. The scorecard is the result; the report is a view
     of it, and a missing view is not a reason to lose a measurement that cost a box to take.
     """
+    # The lesson's last human line: how long it ran. Printed here rather than threaded through each
+    # main.py because every lesson already ends by calling this exactly once, and it fires whether or
+    # not the HTML render below succeeds. save() has already stamped the same number into the JSON.
+    print(_dim(f"\n  lesson run time: {fmt_duration(lesson_elapsed())}"))
     script = repo_root / "infra" / "report" / "render.py"
     if not script.exists():
         return None

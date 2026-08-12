@@ -129,5 +129,14 @@
     "root_volume_gb": 40,
     "substrates": ["60-k8s", "90-k8s-openshell"],
     "why": "The Agent Sandbox controller, the OpenShell gateway StatefulSet and its PVC all land on this one node alongside k3s; the prior art measured that path at roughly 4 CPU / 8 GB. Note what is NOT here: lesson 5's 50-nat-vm. The public-default-route constraint belongs to OpenShell's rootless-podman driver, and the kubernetes driver's sandbox callback is an in-cluster Service on a private ClusterIP."
+  },
+
+  "openshift-sno": {
+    "kind": "baremetal",
+    "type": "EM-B112X-SSD",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 0,
+    "substrates": [],
+    "why": "NOT a lesson — it is the single-node OpenShift CLUSTER that chapter 4's four lessons (10-13) all share. One entry rather than four, because installing SNO takes far longer than a lesson does and re-installing it four times would be absurd. It lives in this table so Terraform owns it and `down.sh --all` sweeps it: at EUR 0.263/hr, forgetting this box is the single most expensive mistake available in this repo. Metal is genuinely required here (Kata needs /dev/kvm AND cluster-admin on a real node); it is the ONLY place in the tutorial that is true. `substrates` is empty on purpose: the SNO install cannot run through up.sh's substrate model, because it REPLACES the operating system mid-flight — the box that finishes the install is RHCOS and has no `agent` user, no repo checkout and no uv. It is driven instead by infra/openshift-sno/install.sh, which runs on the workstation."
   }
 }

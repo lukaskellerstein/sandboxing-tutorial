@@ -104,8 +104,8 @@ plain container:
 
 ```text
 attack               container     + gVisor
-kernel_identity      REACHED       BLOCKED     4.19.0-gvisor
-sys_module_count     REACHED       BLOCKED     0
+kernel_identity      SUCCEEDED     BLOCKED     4.19.0-gvisor
+sys_module_count     SUCCEEDED     BLOCKED     0
    (every network row: unchanged)
 
 7/13  ->  9/13
@@ -150,8 +150,8 @@ default runtime on the same box, in the same minute:
 
 ```text
 attack               container     + gVisor      changed?
-kernel_identity      REACHED       BLOCKED       <-- closed    6.8.0-106-generic -> 4.19.0-gvisor
-sys_module_count     REACHED       BLOCKED       <-- closed    193 -> 0
+kernel_identity      SUCCEEDED     BLOCKED       <-- closed    6.8.0-106-generic -> 4.19.0-gvisor
+sys_module_count     SUCCEEDED     BLOCKED       <-- closed    193 -> 0
    (every other row: unchanged)
 
 probe            container      + gVisor     ratio

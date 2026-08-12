@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bring up ONE lesson's box: provision it with Terraform, copy the repo onto it, install the
+# Bring up ONE lesson's box: provision it with the scw CLI, copy the repo onto it, install the
 # substrates that lesson needs, and assert each boundary FROM INSIDE.
 #
 #   ./up.sh lesson-03-container-gvisor
@@ -30,29 +30,49 @@ TYPE=$(lesson_type "${LESSON}")
 
 require_key
 
+# --- cancel safety ------------------------------------------------------------
+#
+# Turn a cancel signal into a normal exit so the shell tears down cleanly. There is nothing to undo
+# here beyond that: box_create writes the .state file the instant it has an id, so a box that exists
+# is always tracked and tearable, and destroying-on-cancel is the supervisor's job (ctl.py runs
+# down.sh, which finds the box by id or, if the create died before recording, by name). No lock to
+# release, because there is no lock — each box is independent.
+trap 'exit 130' INT TERM
+
 if [ -f "$(state_file "${LESSON}")" ]; then
   state_load "${LESSON}"
   say "${LESSON} already has a box: ${BOX_ID} (${BOX_IP}). ./down.sh ${LESSON} to destroy it."
   exit 0
 fi
 
-# Terraform maintains the whole set, so the apply must name every lesson that should stay up — not
-# just this one. Passing a single name would destroy every other lesson's box as "no longer wanted".
-UP_JSON=$(current_up_json | jq -c --arg l "${LESSON}" '. + [$l] | unique')
+# Below the early exit above on purpose: "already has a box" does no work, and recording it as a run
+# would replace this lesson's last real provision with an empty one in every watcher's history.
+run_track up "${LESSON}"
 
+stage_begin provision "provisioning ${KIND} ${TYPE}"
 say "provisioning ${LESSON}: ${KIND} ${TYPE} in ${ZONE} — EUR $(hourly_price "${TYPE}" "${KIND}")/hr"
-tf_apply "${UP_JSON}"
-tf_state_sync "${LESSON}"
+# One independent box, created by the scw CLI. No shared state, no lock, no "maintain the whole set"
+# apply — so starting several `up`s at once just works: each creates its own box concurrently and
+# nothing any of them does can drop another's box.
+box_create "${LESSON}"
 state_load "${LESSON}"
 say "${LESSON} → ${BOX_USER}@${BOX_IP}  (${BOX_ID})"
+emit box "box allocated" "id=${BOX_ID}" "ip=${BOX_IP}" "type=${BOX_TYPE}" "kind=${BOX_KIND}"
+stage_end ok
 
+stage_begin ssh "waiting for sshd"
 box_wait_ssh "${LESSON}"
+stage_end ok
+
 # cloud-init is what creates the unprivileged `agent` user and enables lingering, and sshd answers
 # before it has finished. Touching the box first produces failures that look like permissions bugs.
+stage_begin cloud-init "waiting for cloud-init"
 box_wait_cloud_init "${LESSON}"
+stage_end ok
 
 # rsync has to exist on the box BEFORE the first rsync, and a minimal cloud image does not ship it.
 # This is the one step that must go over plain ssh.
+stage_begin sync "copying the repo"
 say "bootstrapping rsync on the box"
 # shellcheck disable=SC2016  # expands on the box
 box_ssh "${LESSON}" 'command -v rsync >/dev/null && exit 0
@@ -68,7 +88,9 @@ rsync -az --delete -e "$(box_rsync_shell "${LESSON}")" \
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude 'results' \
   --exclude '.state' --exclude '.ruff_cache' --exclude '.terraform' \
   "${REPO_ROOT}/" "box:sandboxing-tutorial/"
+stage_end ok
 
+stage_begin tooling "installing uv"
 say "installing base tooling (uv)"
 # Single-quoted on purpose: every expansion below must happen on the BOX, not here.
 # shellcheck disable=SC2016
@@ -79,8 +101,13 @@ box_ssh "${LESSON}" 'set -e
   $SUDO apt-get install -y -qq curl ca-certificates jq >/dev/null
   if ! command -v uv >/dev/null; then curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1; fi
   echo "uv: $("$HOME"/.local/bin/uv --version 2>/dev/null || echo MISSING)"'
+stage_end ok
 
 for sub in $(lesson_substrates "${LESSON}"); do
+  # One stage per substrate rather than one "substrates" stage, because they are the slowest and
+  # most variable part of a lesson box — the Kata stack is 9.3 GB and the NAT guest builds a VM —
+  # and "installing substrates, 11 minutes elapsed" tells you nothing about which one is slow.
+  stage_begin "substrate:${sub}" "substrate ${sub}"
   say "substrate: ${sub}"
   # A substrate marked `# runs-as: user` must NOT be sudo'd. OpenShell's podman driver is rootless by
   # design, and installing its gateway as root produces a daemon that starts and then cannot reach
@@ -109,11 +136,21 @@ for sub in $(lesson_substrates "${LESSON}"); do
       --exclude '.state' --exclude '.ruff_cache' --exclude '.terraform' \
       "${REPO_ROOT}/" "box:sandboxing-tutorial/"
     box_ssh "${LESSON}" 'command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1'
+    emit box "lesson re-pointed at the NAT guest" "ip=${GUEST_IP}" "jump=${BOX_JUMP_IP}"
   fi
+  stage_end ok
 done
 
+stage_begin check "asserting the boundary"
 say "asserting the boundary from inside"
 "${HERE}/check.sh" "${LESSON}"
+stage_end ok
+
+# Only a COMPLETE provision blesses the box. run.sh gates on this marker (its wait-box stage): a
+# run started mid-up used to mirror the same tree concurrently with the sync stage above, and the
+# two rsync --delete passes destroyed each other's temp files — the provision died as rsync rc 23,
+# on a box that then looked broken and was merely half-built.
+echo "BOX_READY=1" >>"$(state_file "${LESSON}")"
 
 cat <<EOF
 

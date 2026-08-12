@@ -26,6 +26,13 @@ first), [`rules/09-code-quality.md`](rules/09-code-quality.md),
 [`rules/lsp.md`](rules/lsp.md) (the `LSP` tool — only in repos that opted in,
 and deferred, so it must be loaded before it can be called).
 
+This repo **did** opt in, for Python and shell (`lsp-python`, `lsp-bash`). Shell
+is the one worth remembering: `infra/` is ~30 scripts that `source` each other,
+and `infra/lib.sh`'s functions are called from most of them — `findReferences`
+before changing one of those signatures, not `grep`. What shell's server cannot
+do is diagnose; `shellcheck` findings come from `nvim-tools`, per
+[`rules/machine-tools.md`](rules/machine-tools.md).
+
 **NEVER report completion without first running the affected lesson end-to-end on
 its own disposable box.** The cycle is **provision → run → validate → investigate
 on failure → destroy**, per lesson, and it is one command: `cd tutorial/<lesson>
@@ -54,14 +61,17 @@ not fixed**. Report it as such rather than shipping the green run.
 
 ## sandboxing-tutorial at a glance
 
-- **Status: chapters 1–2 built (2026-08-06).** `syllabus.md` exists and lessons
-  01–05 are written, and **all five are green end-to-end** — verified 2026-08-06.
-  Lesson 05's old `openshell sandbox exec` hang is fixed: `sandbox create` returns
-  before the supervisor accepts work, and an `exec` in that window hangs rather than
-  failing, so `wait_ready()` polls `sandbox list` for `Ready` first. The syllabus is
-  still the source of truth for what
+- **Status: chapters 1–4 built (2026-08-10).** Lessons 01–13 are written and green:
+  01–09 on Scaleway VMs, 10–13 on single-node OpenShift 4.18.49 on bare metal.
+  **Chapter 5 is unwritten.** The syllabus is still the source of truth for what
   lessons exist and in what order, and it is written *before* any lesson directory —
   do not create a leaf the syllabus does not list.
+- **Chapter 4 shares ONE cluster across lessons 10–13**, so its `run.sh` does not
+  provision or destroy. `infra/openshift-sno/install.sh` brings the cluster up (~1.5–2 h)
+  and **`infra/down.sh openshift-sno` is a step you own** — €0.263/hr until you run it.
+  Its `--from <stage>` resume path is the one people reach for; `REPRODUCE.md` §8 is the
+  catalogue of what breaks there and why each fault looks like a broken cluster when it
+  is not.
 - **The subject** — running an agent and its generated code behind a real
   isolation boundary, as a ladder: no sandbox → container → **gVisor** → **Kata
   Containers** → **NVIDIA OpenShell**, across local containers and Kubernetes.
@@ -82,11 +92,12 @@ not fixed**. Report it as such rather than shipping the green run.
 - **This is macOS on Apple Silicon driving Linux kernel features.** Lessons do not
   run here: `infra/` provisions a disposable Scaleway box per lesson and the lesson
   runs *there*. A lesson that does not say where its boundary lives is misleading.
-- **`infra/terraform/lessons.json` is the only per-lesson hardware table.**
-  Terraform reads it with `jsondecode()`, `infra/lib.sh` with `jq` — never add a
-  second copy. Lessons 1–5 run on **VMs** (say "VM", not "Instance"); only
-  chapter 4's OpenShift box needs bare metal. That was measured, not assumed —
-  `syllabus.md` § *Verified on this hardware*.
+- **`infra/lessons.json` is the only per-lesson hardware table**, read by `infra/lib.sh`
+  with `jq` — never add a second copy. Boxes are provisioned with the `scw` CLI directly
+  (no Terraform: each box is independent, created/destroyed by its own id, so there is no
+  shared-state lock and parallel provisioning / cancel are trivial). Lessons 1–5 run on
+  **VMs** (say "VM", not "Instance"); only chapter 4's OpenShift box needs bare metal. That
+  was measured, not assumed — `syllabus.md` § *Verified on this hardware*.
 
 Full facts → [`rules/01-project-config.md`](rules/01-project-config.md); stack and
 conventions → [`rules/10-tech-stack.md`](rules/10-tech-stack.md).

@@ -22,6 +22,9 @@ they are the ``policy`` rows on this lesson's own scorecard, and they are lesson
 The boundary lives in single-node k3s on this box's own kernel — the same kernel `uname -r` reports
 on the node. See ``infra/substrates/60-k8s.sh``.
 
+    # 1. start the box (once):
+    cd ../../infra && ./up.sh lesson-06-k8s     # or press 'u' in the sbx-tui panel
+    # 2. then, as often as you like (on your machine this runs the lesson ON the box):
     cd tutorial/lesson-06-k8s && uv sync && uv run python -u main.py
 """
 
@@ -37,6 +40,12 @@ import k8s
 from scorecard import Card, render_report
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+LESSON = "lesson-06-k8s"
+#: What infra records about this lesson's box. Read only to make the refusal ACTIONABLE — "no box at
+#: all" and "the box is up, you are just not on it" need different next steps. Missing means missing:
+#: the leaf still runs from a clone that has never touched infra/, nothing is imported from it, and
+#: nothing breaks if the file never appears.
+STATE_ENV = REPO_ROOT / "infra" / ".state" / f"{LESSON}.env"
 NAMESPACE = "sbx-lesson-06"
 RESULTS = REPO_ROOT / "results" / "lesson-06.json"
 SUITE_DIR = REPO_ROOT / "infra" / "images" / "agent"
@@ -282,7 +291,65 @@ def assert_boundary_engaged(card: Card) -> None:
         sys.exit("  boundary assertion FAILED — the pod did not engage as configured; not reporting a result.")
 
 
+def box_ip_if_any() -> str | None:
+    """The IP of this lesson's box, from infra's state file — or None if there is no box.
+
+    A refusal decision only, never imported logic: the leaf stays runnable from a clone that has
+    never touched ``infra/`` (the file is simply absent → None → "start a box first"). Nothing here
+    talks to Scaleway; "state file present" is a good enough proxy for "a box is up" to tell someone
+    what to do next, and being wrong only means the message points at ``run.sh`` instead of ``up.sh``.
+    """
+    try:
+        for line in STATE_ENV.read_text(encoding="utf-8").splitlines():
+            if line.startswith("BOX_IP="):
+                return line.split("=", 1)[1].strip().strip('"') or None
+    except OSError:
+        return None
+    return None
+
+
+def run_on_box(ip: str) -> int:
+    """A box is up but this is not it — run the lesson ON the box, exactly as ./run.sh does.
+
+    This is what makes ``uv run main.py`` the only command a reader needs: start the box, then run
+    it from here as often as you like. It delegates to infra/run.sh so there is a single
+    implementation of "run this lesson on its box" — that run sets SANDBOXING_TUTORIAL_DISPOSABLE=1,
+    so the copy of main.py which executes ON the box takes the real path rather than delegating
+    again (no loop).
+    """
+    runner = REPO_ROOT / "infra" / "run.sh"
+    print(f"Box for {LESSON} is up ({ip}). Running the lesson ON it via infra/run.sh …\n")
+    return subprocess.run([str(runner), LESSON]).returncode
+
+
+def refuse_no_box() -> None:
+    """No box is up — say how to start one, and exit having run NOTHING.
+
+    The boundary this lesson measures exists only on its disposable box, so the first thing a local
+    run hits is a failure that has nothing to do with the lesson. Refusing here, with the next step
+    attached, is the honest version of that failure.
+    """
+    print(f"No box for {LESSON} is up — nothing to run.")
+    print("This lesson only runs on its own disposable Scaleway box:")
+    print("the boundary lives in single-node k3s installed on the box, and the pod runs on that")
+    print("node's kernel — which is the lesson's whole claim.")
+    print("Start the box, then run it from here:\n")
+    print(f"    cd ../../infra && ./up.sh {LESSON}      # or press 'u' in the sbx-tui panel")
+    print("    uv run python -u main.py                # runs it on the box and brings the card home")
+    raise SystemExit(2)
+
+
 def main() -> None:
+    # `uv run main.py` is the one command. On the disposable box it runs for real (infra sets
+    # SANDBOXING_TUTORIAL_DISPOSABLE=1 there). On your machine it runs the lesson ON the box when
+    # one is up, and tells you to start one when none is.
+    if os.environ.get("SANDBOXING_TUTORIAL_DISPOSABLE") != "1":
+        ip = box_ip_if_any()
+        if not ip:
+            refuse_no_box()
+            return  # unreachable — refuse_no_box exits — but narrows ip to str for the type checker
+        raise SystemExit(run_on_box(ip))
+
     ensure_image()
     k8s.ensure_namespace(NAMESPACE)
     try:

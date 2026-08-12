@@ -100,6 +100,22 @@ def esc(value: object) -> str:
     return html.escape(str(value))
 
 
+def fmt_dur(seconds: object) -> str:
+    """`1h07m` / `1m03s` / `47s`, matching scorecard.py's fmt_duration so the report and the terminal
+    print the run time the same way. Empty for a card that predates duration tracking."""
+    if seconds is None:
+        return ""
+    try:
+        s = int(round(float(seconds)))  # pyright: ignore[reportArgumentType]
+    except (TypeError, ValueError):
+        return ""
+    if s >= 3600:
+        return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+    if s >= 60:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s}s"
+
+
 def load_card(lesson: str) -> dict | None:
     """A lesson's scorecard, by lesson name. `lesson-03-container-gvisor` -> results/lesson-03.json."""
     number = lesson.split("-")[1]
@@ -133,6 +149,9 @@ def build_json(card: dict) -> dict:
         "boundary": primary.get("boundary", ""),
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "complete": primary.get("complete", True),
+        # How long the lesson ran, as the scorecard recorded it. None on a card written before
+        # duration tracking; overall.py and the page both tolerate that.
+        "duration_s": primary.get("duration_s"),
         "blocked": blocked,
         "scored": scored,
         # Everything the lesson recorded about the machine, kept verbatim. `overall.py` uses it to
@@ -255,6 +274,9 @@ def render_html(card: dict) -> str:
         for k, v in (card.get(key) or {}).items():
             meta.append(f"<dt>{esc(k)}</dt><dd>{esc(v)}</dd>")
 
+    dur = fmt_dur(card.get("duration_s"))
+    duration_line = f'<p class="note">Lesson run time: <strong>{esc(dur)}</strong>.</p>' if dur else ""
+
     warn = ""
     if not card.get("complete", True):
         warn = (
@@ -279,6 +301,7 @@ This page covers <strong>this lesson only</strong>. To compare rungs, build the 
 
 <p class="score">{blocked} <small>of {scored} attacks blocked</small></p>
 <span class="bar"><span style="width:{pct}%"></span></span>
+{duration_line}
 {warn}
 <div class="legend">
   <span><strong style="color:var(--ok)">BLOCKED</strong> the boundary stopped the attack</span>
@@ -311,7 +334,7 @@ def main() -> None:
     do_open = "--open" in args
     wanted = [a for a in args if not a.startswith("--")]
     if not wanted:
-        wanted = sorted(p.name for p in TUTORIAL.glob("lesson-0*") if p.is_dir())
+        wanted = sorted(p.name for p in TUTORIAL.glob("lesson-*") if p.is_dir())  # not lesson-0*: ch4 is 10-13
 
     written: list[Path] = []
     for lesson in wanted:

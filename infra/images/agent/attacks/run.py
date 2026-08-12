@@ -85,15 +85,12 @@ def main(argv: list[str] | None = None) -> int:
 
     card = run_groups(groups, on_finding=emit)
 
-    log("")
-    log(card.table())
-    blocked, applicable = card.tally()
-    log("")
-    log(f"  boundaries that held: {blocked}/{applicable}")
-    log("  (evidence/audit is measured by the lesson from the runtime's logs, not from in here)")
-
-    # The whole card, as one line. The per-finding lines above already carry the same data; this is
-    # the host's fast path and its proof that the suite reached the end.
+    # The scorecard's human view is the LESSON's job: it parses the card below and prints it once, in
+    # colour, on the host (scorecard.py Card.render()). This driver used to also print the table to
+    # stderr, which every lesson that echoes the box's stderr then showed a SECOND time, right above
+    # its own coloured copy. So the box keeps only its identity banner above and leaves the table to
+    # the one renderer. The machine contract is unchanged: each finding already streamed as a
+    # FINDING_JSON line, and the whole card follows as one SCORECARD_JSON line.
     print(f"SCORECARD_JSON {card.to_json()}", flush=True)
     return 0
 

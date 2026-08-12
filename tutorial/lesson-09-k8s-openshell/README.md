@@ -148,9 +148,9 @@ managed on the identical probes:
 | :-- | :-- | :-- |
 | `egress_gateway` — should ALLOW | `200` BLOCKED | `200` BLOCKED |
 | `egress_offpolicy` — should DENY | `000` BLOCKED | `403` BLOCKED |
-| `http_method_denied` — POST to the **same allowed host** | `200` **REACHED** | `403` **BLOCKED** |
-| `binary_scoped` — a copied `curl` at an unnamed path | `200` **REACHED** | `403` **BLOCKED** |
-| `fs_policy_write` — a path policy | `ALLOWED` **REACHED** | `PermissionError` **BLOCKED** |
+| `http_method_denied` — POST to the **same allowed host** | `200` **SUCCEEDED** | `403` **BLOCKED** |
+| `binary_scoped` — a copied `curl` at an unnamed path | `200` **SUCCEEDED** | `403` **BLOCKED** |
+| `fs_policy_write` — a path policy | `ALLOWED` **SUCCEEDED** | `PermissionError` **BLOCKED** |
 
 Note the `000` versus `403` in the second row. Both are denials, and they are not the
 same event: `000` is *nothing answered*, `403` is *something refused you and wrote it
@@ -174,12 +174,12 @@ everywhere else. "It was blocked" is not an incident report; that is.
 **Two rows stay open, and both are the point:**
 
 ```text
-kernel_identity   6.8.0-106-generic   REACHED   the SAME kernel as the node
-plant_backdoor    3                   REACHED   ~/.bashrc,~/.profile,~/.ssh/authorized_keys
+kernel_identity   6.8.0-106-generic   SUCCEEDED the SAME kernel as the node
+plant_backdoor    3                   SUCCEEDED ~/.bashrc,~/.profile,~/.ssh/authorized_keys
 ```
 
 `kernel_identity` is the headline — see below. `plant_backdoor` reads exactly as it
-does on lesson 5 (`3`, REACHED): the policy grants `read_write: [/sandbox, /tmp,
+does on lesson 5 (`3`, SUCCEEDED): the policy grants `read_write: [/sandbox, /tmp,
 /dev/null]` and `$HOME` **is** `/sandbox`, so a backdoor written there is permitted by
 the policy as written. It is a fair reading of this policy rather than a failure of
 OpenShell — tighten `read_write` and the row moves.

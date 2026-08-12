@@ -2,8 +2,9 @@
   "lesson": "lesson-08-k8s-kata",
   "mode": "network-on",
   "boundary": "hardened Pod, runtimeClassName: kata-qemu (per-pod VM), scoped NetworkPolicy",
-  "generated_at": "2026-08-08T12:51:39+02:00",
+  "generated_at": "2026-08-11T16:12:26+02:00",
   "complete": true,
+  "duration_s": 172.0,
   "blocked": 14,
   "scored": 19,
   "host": {
@@ -178,7 +179,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 22.0,
+      "value": 19.4,
       "detail": "",
       "verdict": "INFO"
     },
@@ -187,7 +188,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 133.7,
+      "value": 119.0,
       "detail": "",
       "verdict": "INFO"
     },

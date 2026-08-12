@@ -8,10 +8,11 @@
 # on it: a backdoor written, a package installed that executed code at install time, a fork bomb.
 # Nothing is left running afterwards, which is the other half of why the attacks can be real.
 #
-# Two mechanisms, on purpose. Terraform owns what it created and `up=[]` is a real assertion that
-# nothing remains. The prefix sweep afterwards catches what Terraform cannot know about: a box
-# created outside it, or one whose state entry was lost. That is not paranoia — it happened while
-# this repo was being written, and the sweep is what found the untracked box.
+# Isolation is now structural, not a keep-list. A single teardown terminates EXACTLY its own box by
+# id (lib.sh's box_destroy) and never touches another — there is no whole-set apply and no prefix
+# sweep that could reach a neighbour. Only `--all` sweeps the prefix, to catch anything untracked.
+# On 2026-08-10 a single `./down.sh lesson-01` destroyed lesson 2's live box because the old sweep
+# terminated every sbx-* it saw; that class of bug cannot happen when a single down never sweeps.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,37 +23,16 @@ source "${HERE}/lib.sh"
 # and is only ever REPORTED here, never touched.
 PREFIX=sbx-
 
-sweep_orphans() {
-  local found=0 id name
-  say "sweeping ${ZONE} for anything still billable"
-
-  while read -r id name; do
-    [ -z "${id}" ] && continue
-    found=1
-    echo "    ORPHAN vm        ${name} (${id}) — terminating"
-    scw instance server terminate "${id}" zone="${ZONE}" with-ip=true with-block=true >/dev/null || true
-  done < <(scw instance server list zone="${ZONE}" -o json \
-    | jq -r --arg p "${PREFIX}" '.[] | select(.name | startswith($p)) | "\(.id) \(.name)"')
-
-  while read -r id name; do
-    [ -z "${id}" ] && continue
-    found=1
-    echo "    ORPHAN baremetal ${name} (${id}) — deleting"
-    scw baremetal server delete "${id}" zone="${ZONE}" >/dev/null || true
-  done < <(scw baremetal server list zone="${ZONE}" -o json \
-    | jq -r --arg p "${PREFIX}" '.[] | select(.name | startswith($p)) | "\(.id) \(.name)"')
-
-  # A terminated server can leave these behind, and both keep billing on their own. They are the
-  # orphans nobody looks for, because the server list is empty and that reads like "all clear".
+# Detached volumes and unattached flexible IPs each keep billing on their own after a server is gone,
+# and the server list reading empty looks exactly like "all clear". A `terminate with-block with-ip`
+# should leave none, so this only WARNS — it never deletes, because a volume could belong to work
+# outside this repo. Foreign (non-sbx-) boxes are reported and left alone.
+report_leftovers() {
   local vols ips
   vols=$(scw instance volume list zone="${ZONE}" -o json 2>/dev/null | jq '[.[] | select(.server == null)] | length')
   ips=$(scw instance ip list zone="${ZONE}" -o json 2>/dev/null | jq '[.[] | select(.server == null)] | length')
   [ "${vols:-0}" -gt 0 ] && echo "    WARNING: ${vols} detached volume(s) still exist — 'scw instance volume list zone=${ZONE}'"
   [ "${ips:-0}" -gt 0 ] && echo "    WARNING: ${ips} unattached flexible IP(s) still exist — 'scw instance ip list zone=${ZONE}'"
-
-  [ "${found}" -eq 0 ] && say "nothing with the ${PREFIX} prefix was left running"
-
-  # Report, never touch. A box that is not ours is somebody's real work.
   scw instance server list zone="${ZONE}" -o json \
     | jq -r --arg p "${PREFIX}" '.[] | select(.name | startswith($p) | not) | "    (not ours, left alone) vm        \(.name)"'
   scw baremetal server list zone="${ZONE}" -o json \
@@ -60,25 +40,61 @@ sweep_orphans() {
   return 0
 }
 
+# --all ONLY: terminate every sbx-* server still in the account, tracked or not. Never called by a
+# single-lesson teardown — that already destroyed exactly its own box by id.
+sweep_orphans() {
+  local found=0 id name
+  say "sweeping ${ZONE} for anything still billable"
+  while read -r id name; do
+    [ -z "${id}" ] && continue
+    found=1
+    echo "    ORPHAN vm        ${name} (${id}) — terminating"
+    scw instance server terminate "${id}" zone="${ZONE}" with-ip=true with-block=true >/dev/null || true
+  done < <(scw instance server list zone="${ZONE}" -o json \
+    | jq -r --arg p "${PREFIX}" '.[] | select(.name | startswith($p)) | "\(.id) \(.name)"')
+  while read -r id name; do
+    [ -z "${id}" ] && continue
+    found=1
+    echo "    ORPHAN baremetal ${name} (${id}) — deleting"
+    scw baremetal server delete "${id}" zone="${ZONE}" >/dev/null || true
+  done < <(scw baremetal server list zone="${ZONE}" -o json \
+    | jq -r --arg p "${PREFIX}" '.[] | select(.name | startswith($p)) | "\(.id) \(.name)"')
+  [ "${found}" -eq 0 ] && say "nothing with the ${PREFIX} prefix was left running"
+  report_leftovers
+}
+
+# One target is a target; `--all` is not, and there is no per-target run directory to record it in.
+[ "${1:-}" = "--all" ] || run_track down "${1:?usage: ./down.sh <lesson>   (or --all)}"
+
+stage_begin destroy "destroying"
 if [ "${1:-}" = "--all" ]; then
   say "destroying every lesson box"
-  tf_init_once
-  tf apply -input=false -auto-approve -no-color -var 'up=[]' >/dev/null
-  rm -f "${STATE_DIR}"/*.env "${STATE_DIR}"/*.sshcfg 2>/dev/null || true
+  # Each tracked box, terminated by its own id. Independent boxes, so this is just a loop — no set to
+  # recompute, no lock.
+  shopt -s nullglob
+  for f in "${STATE_DIR}"/*.env; do
+    box_destroy "$(basename "${f}" .env)"
+  done
+  ALL_SWEEP=1
 else
   LESSON="${1:?usage: ./down.sh <lesson>   (or --all)}"
-  if [ -f "$(state_file "${LESSON}")" ]; then
-    state_load "${LESSON}"
-    say "destroying ${LESSON}: ${BOX_KIND} ${BOX_ID} (${BOX_IP})"
-  else
-    say "${LESSON}: no box recorded — asking Terraform to make sure anyway"
-  fi
-  # Re-apply with this lesson SUBTRACTED, so every other lesson's box survives untouched. The
-  # subtraction has to be explicit: current_up_json unions in Terraform's own view, which still
-  # lists this lesson, so deleting the state file alone would leave the box running.
-  rm -f "$(state_file "${LESSON}")" "$(ssh_config_file "${LESSON}")"
-  tf_apply "$(current_up_json | jq -c --arg l "${LESSON}" 'map(select(. != $l))')"
+  # Terminate EXACTLY this lesson's box — by id from .state, or by name if the create died before it
+  # recorded anything. There is no set and no broad sweep, so a single teardown cannot touch another
+  # lesson's box. That isolation is the whole reason this repo moved off Terraform's whole-set apply.
+  box_destroy "${LESSON}"
   say "${LESSON}: destroyed, billing stopped"
+  ALL_SWEEP=0
 fi
+stage_end ok
 
-sweep_orphans
+# NEVER the finish line. `destroyed, billing stopped` prints when the terminate call returns; a
+# volume or a flexible IP can outlive the server, each billing on its own. Ask the ACCOUNT. `--all`
+# terminates every remaining sbx-* box; a single teardown already destroyed exactly its own box by
+# id, so it only REPORTS leftovers — it must never terminate another lesson's box.
+stage_begin sweep "sweeping the account"
+if [ "${ALL_SWEEP}" -eq 1 ]; then
+  sweep_orphans
+else
+  report_leftovers
+fi
+stage_end ok

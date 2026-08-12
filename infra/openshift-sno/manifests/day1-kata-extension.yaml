@@ -1,0 +1,32 @@
+# The sandboxed-containers RHCOS extension, installed on day 1 instead of by the operator on day 2.
+#
+# WHY: applied as a day-2 change (the operator's KataConfig -> MachineConfig path), this extension
+# costs a full MCO rollout with a node reboot — measured at ~19 min on 2026-08-10, the single
+# largest avoidable block in the install. Baked into the install manifests instead, the extension is
+# laid down during the initial deploy, whose reboots happen anyway.
+#
+# THE TRICK THAT MAKES IT FREE: this object is a replica of what the operator itself generates —
+# controllers/openshift_controller.go at v1.12.1: name `50-enable-sandboxed-containers-extension`,
+# role `master` (checkConvergedCluster() returns master on SNO, where the worker MCP has 0
+# machines), label `app: <kataconfig name>`, extensions `[sandboxed-containers]`, an empty ignition
+# 3.2.0 config. When the kata stage later applies the KataConfig, the operator's create-or-update
+# of this MachineConfig finds an identical spec, the rendered config does not change, and the MCO
+# has nothing to reboot for. If a future operator version generates something different, the worst
+# case is the old behaviour: one MCO reboot. Verify the match against the operator source when
+# bumping past v1.12.x.
+#
+# `sandboxed-containers` is the RHCOS spelling — the MCO translates it to the kata-containers RPMs
+# (the operator sends the same string on OCP; only FCOS/SCOS need `kata-containers` directly).
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 50-enable-sandboxed-containers-extension
+  labels:
+    machineconfiguration.openshift.io/role: master
+    app: cluster-kataconfig
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+  extensions:
+    - sandboxed-containers

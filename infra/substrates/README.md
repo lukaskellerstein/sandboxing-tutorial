@@ -222,7 +222,7 @@ Every substrate re-run on Scaleway VMs, using these scripts unmodified. Results:
 **`30-containerd-kata.sh` needs a 40 GB root volume.** A Scaleway VM's default is
 8 GB usable and the `kata-static` unpack dies with `No space left on device` at
 9.3 GB. Elastic Metal's large local SSD is why this had never appeared. Sizing now
-lives per lesson in `terraform/lessons.json`.
+lives per lesson in `lessons.json`.
 
 **`50-nat-vm.sh` could not provision its guest on any host.** Three separate bugs
 in the cloud-config it generates, found by reading the guest's serial console:
@@ -257,7 +257,7 @@ check)` and was being executed.
 
 Single-node **k3s** on the lesson's own disposable VM. Why k3s rather than a managed
 cluster (Kapsule) or a nested one (minikube, kind) is argued once, in
-`terraform/lessons.json`; the short version is that every boundary in this chapter is
+`lessons.json`; the short version is that every boundary in this chapter is
 installed at **node** level, which managed node pools reconcile away and nested nodes
 cannot host at all.
 
@@ -285,7 +285,7 @@ cannot host at all.
      pod-start race, not slow enforcement).
    - the lessons' agent pod waits `POLICY_SETTLE_S` before starting the suite. If that
      is ever too short the lesson **fails loudly** rather than reporting a weaker
-     boundary, because `exfiltrate` would read REACHED and the assertion catches it.
+     boundary, because `exfiltrate` would read SUCCEEDED and the assertion catches it.
 
 3. **`kubectl run --rm -i` returns the output TWICE, intermittently.** With `-i`
    kubectl attaches, and when the container has already written and exited before the

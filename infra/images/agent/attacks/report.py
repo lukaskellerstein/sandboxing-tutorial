@@ -64,17 +64,6 @@ class Finding:
     group: str = "reach"
     detail: str = ""
 
-    @property
-    def verdict(self) -> str:
-        """Human wording for ``contained``, phrased per group.
-
-        "REACHED" is right for a boundary probe and wrong for an audit count, whose failure is that
-        nothing was *written down*. Same field, a different sentence.
-        """
-        if self.group == "evidence":
-            return {True: "RECORDED", False: "NO RECORD", None: "n/a"}[self.contained]
-        return {True: "BLOCKED", False: "REACHED", None: "n/a"}[self.contained]
-
     def as_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
@@ -108,9 +97,6 @@ class Scorecard:
     def get(self, name: str) -> Finding | None:
         return next((f for f in self.findings if f.name == name), None)
 
-    def group(self, name: str) -> list[Finding]:
-        return [f for f in self.findings if f.group == name]
-
     def to_json(self) -> str:
         return json.dumps({"findings": [f.as_dict() for f in self.findings]})
 
@@ -130,25 +116,3 @@ class Scorecard:
                 )
             )
         return cls(out)
-
-    def table(self) -> str:
-        """Aligned text for stderr and for pasting into a README."""
-        if not self.findings:
-            return "  (no findings)"
-        width = max(len(f.name) for f in self.findings)
-        lines: list[str] = []
-        for group in GROUPS:
-            members = self.group(group)
-            if not members:
-                continue
-            lines.append(f"  [{group}]")
-            for f in members:
-                detail = f"  {f.detail}" if f.detail else ""
-                lines.append(f"    {f.name:<{width}}  {str(f.value):<20} {f.verdict}{detail}")
-        return "\n".join(lines)
-
-    def tally(self) -> tuple[int, int]:
-        """(blocked, applicable) — how many boundaries held out of those that applied on this rung."""
-        applicable = [f for f in self.findings if f.contained is not None]
-        blocked = sum(1 for f in applicable if f.contained)
-        return blocked, len(applicable)

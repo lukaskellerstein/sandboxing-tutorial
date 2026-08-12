@@ -8,6 +8,23 @@ apiVersion: v1
 baseDomain: spike.lab
 metadata:
   name: sno
+# Trim the payload to what chapter 4 actually uses. The full 4.18 payload is 906 manifests and ~34
+# cluster operators converging on one 2012-era Xeon; the rollout is CPU-bound and this cluster
+# deliberately ships without *.apps DNS, so Console could never work anyway. What stays, and why:
+#   OperatorLifecycleManager  the kata stage installs the sandboxed-containers operator (a CSV)
+#   marketplace               the redhat-operators CatalogSource its Subscription pulls from
+#                             (the installer refuses marketplace without OperatorLifecycleManager)
+#   Ingress                   not optional: the installer rejects a standalone cluster without it
+# Everything else (Console, Insights, Storage, MachineAPI, ImageRegistry, samples, Build...) is
+# dropped. hostPath PVs are core API and survive dropping Storage. A capability can be ENABLED on a
+# live cluster later (oc patch clusterversion) but never disabled — so under-shooting is repairable
+# without a reinstall, and over-shooting costs rollout minutes on every single build.
+capabilities:
+  baselineCapabilitySet: None
+  additionalEnabledCapabilities:
+    - OperatorLifecycleManager
+    - marketplace
+    - Ingress
 compute:
   - name: worker
     replicas: 0
