@@ -123,17 +123,17 @@ exfiltrate           BLOCKED       BLOCKED
 plant_backdoor       BLOCKED       BLOCKED
 cloud_metadata       BLOCKED       BLOCKED
 k8s_sa_token         BLOCKED       BLOCKED
-kernel_identity      REACHED       BLOCKED       <-- closed
-sys_module_count     REACHED       BLOCKED       <-- closed
+kernel_identity      SUCCEEDED     BLOCKED       <-- closed
+sys_module_count     SUCCEEDED     BLOCKED       <-- closed
 kallsyms_readable    BLOCKED       BLOCKED
 bpf                  BLOCKED       BLOCKED
 io_uring_setup       BLOCKED       BLOCKED
 perf_event_open      BLOCKED       BLOCKED
 egress_gateway       BLOCKED       BLOCKED
 egress_offpolicy     BLOCKED       BLOCKED
-http_method_denied   REACHED       REACHED
-binary_scoped        REACHED       REACHED
-fs_policy_write      REACHED       REACHED
+http_method_denied   SUCCEEDED     SUCCEEDED
+binary_scoped        SUCCEEDED     SUCCEEDED
+fs_policy_write      SUCCEEDED     SUCCEEDED
 malicious_package    BLOCKED       BLOCKED
 reverse_shell        BLOCKED       BLOCKED
 resource_exhaustion  BLOCKED       BLOCKED

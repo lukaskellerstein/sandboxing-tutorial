@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
+#
+# ############################################################################
+# #  SUPERSEDED (2026-08-10) — use ../install.sh, which does this correctly.  #
+# ############################################################################
+#
+# Kept for reference because it documents the manual path, but do NOT run it:
+#
+#   * it targets /dev/sda by NAME, and that is the bug that produced no cluster on
+#     2026-08-05 — the RHCOS-live kernel enumerated the disks the other way round
+#     from Ubuntu, so the install landed on the disk the BIOS does not boot
+#     (OPTIMIZATIONS.md §5/§9). install.sh pins the disk by WWN instead.
+#   * it relies on `rd.md=0` to keep the live env off the RAID. That was MEASURED
+#     not to work — the array assembled anyway, just renamed and read-only.
+#   * the RHCOS URLs below are hardcoded and correct for 4.18.49 ONLY. They are a
+#     cache of `openshift-install coreos print-stream-json` and rot when the pin
+#     moves; install.sh re-derives them every run (§6).
+#
 # Runs on the INSTALLED Ubuntu 24.04 (user `ubuntu`, sudo). kexecs into
 # RHCOS-live-in-RAM so bootstrap-in-place can write to a free /dev/sda.
 #

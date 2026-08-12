@@ -6,7 +6,7 @@
 # kata-static plus /dev/kvm (lesson 8), the OpenShell gateway (lesson 9). A managed node pool
 # reconciles that away, and a nested cluster (minikube's docker driver, kind) puts the node inside a
 # container, which breaks Kata outright and makes lesson 6's "the pod runs on the NODE's kernel"
-# claim untrue of the thing the reader actually ran. The full reasoning is in terraform/lessons.json.
+# claim untrue of the thing the reader actually ran. The full reasoning is in lessons.json.
 #
 # k3s is conformant Kubernetes, not a toy: the RuntimeClass field lessons 7 and 8 turn is the same
 # field on any cluster, and it is the same containerd underneath.

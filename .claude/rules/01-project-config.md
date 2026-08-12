@@ -9,26 +9,33 @@ description: Project configuration — architecture, paths, dev environment
      bullet that does not apply rather than leaving a placeholder. -->
 
 > [!important]
-> **Chapters 1–2 are built as of 2026-08-06.** `syllabus.md` and lessons 01–05
-> exist, as does `infra/` with a Terraform-provisioned box per lesson. Lessons
-> **01–05 are all green end-to-end on Scaleway VMs**, verified 2026-08-06; lesson
-> 05's old `openshell sandbox exec` hang is fixed by `wait_ready()` polling for
-> `Ready` before the first `exec`. Chapters 3–5 are still unwritten. Update this file
-> the moment any of that stops being true.
+> **Chapters 1–4 are built as of 2026-08-10.** `syllabus.md` and lessons 01–13 exist,
+> as does `infra/`. Lessons **01–09 are green end-to-end on Scaleway VMs** (01–05
+> verified 2026-08-06, 06–09 on 2026-08-07) and **10–13 are green on single-node
+> OpenShift 4.18.49** on `EM-B112X-SSD` bare metal, verified 2026-08-10.
+> **Chapter 5 is still unwritten.** Update this file the moment any of that stops
+> being true.
+>
+> Chapter 4 breaks the per-lesson-box model on purpose: all four lessons share ONE
+> cluster, so `tutorial/lesson-1N-*/run.sh` neither provisions nor destroys, and the
+> teardown (`infra/down.sh openshift-sno`) is a step a human owns. Nothing will do it
+> for you, and the box is €0.263/hr.
 
 - **Project**: sandboxing-tutorial — a hands-on tutorial on sandboxing agentic
   workloads: running an AI agent and the code it generates behind a real
   isolation boundary, on local containers and on Kubernetes
 - **Architecture**: independently-runnable lesson leaves. No application; the
-  lessons *are* the deliverable. **Five leaves exist (lessons 01–05).**
+  lessons *are* the deliverable. **Thirteen leaves exist (lessons 01–13).**
 - **Structure**: `tutorial/` (the lesson leaves), `syllabus.md` (the source of
   truth for the lesson list and ordering — it comes before any lesson directory),
-  `infra/` (Terraform + substrate scripts for the per-lesson disposable box)
+  `infra/` (`scw`-based provisioning + substrate scripts for the per-lesson disposable box)
 - **Build**: nothing is built. `uv sync` in a leaf resolves that leaf's
   dependencies against its own `.venv`.
-- **Run a lesson**: `cd tutorial/<lesson> && ./run.sh` — provisions its Scaleway VM,
-  runs the lesson there, destroys the box (including on failure), and writes
-  `report.html` + `report.json` beside the lesson
+- **Run a lesson**: `cd tutorial/<lesson> && ./run.sh` — for lessons 01–09 that
+  provisions its Scaleway VM, runs the lesson there, destroys the box (including on
+  failure), and writes `report.html` + `report.json` beside the lesson.
+  **Lessons 10–13 are the exception**: they run against the one shared OpenShift
+  cluster and neither provision nor destroy it.
 - **Test**: no repo-wide suite. That same command *is* the test: provision → run →
   validate → investigate on failure → destroy, per lesson — see `06-testing.md`.
 - **Key dependencies**: none declared yet. Per-lesson extras go in each leaf's
@@ -80,15 +87,13 @@ its own environment — no workspaces, by design.
 
 | Leaf | Count | Notes |
 |:--|:--|:--|
-| `tutorial/` | **0** | empty; lessons are written after `syllabus.md` exists |
+| `tutorial/` | **13** | lessons 01–13; chapters 1–4 of the syllabus |
 
 Every leaf carries its own `pyproject.toml` (with `[tool.ruff]` extending the
 root `ruff.toml`), `uv.lock`, `.gitignore` and `.venv`.
 
-**`pyrightconfig.json` does not exist yet, deliberately.** The generator refuses
-to write one until at least one leaf has a `.venv`, since an empty
-`executionEnvironments` list is worse than no file. The moment the first lesson
-is created and synced:
+**`pyrightconfig.json` exists** and lists every leaf that has a `.venv`. Regenerate
+it whenever a leaf is added:
 
 ```bash
 python3 ~/Projects/Github/lukaskellerstein/mac-setup/projects/scripts/gen-pyrightconfig.py .
@@ -97,7 +102,7 @@ python3 ~/Projects/Github/lukaskellerstein/mac-setup/projects/scripts/gen-pyrigh
 Re-run it whenever a leaf is added, and diff before committing. Without it
 basedpyright reports spurious unresolved imports across the whole tree.
 
-A lesson leaf's intended shape *(convention — none exists yet)*:
+A lesson leaf's shape:
 
 ```text
 lesson-N-<name>/

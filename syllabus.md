@@ -736,7 +736,7 @@ and lessons unmodified. Total cost of the exercise ≈ €0.20.
 `EM-A116X-SSD` run recorded in `results/lesson-01.json`:
 
 ```text
-all 17 findings: IDENTICAL BLOCKED/REACHED on VM and on metal
+all 17 findings: IDENTICAL BLOCKED/SUCCEEDED on VM and on metal
 rootless podman : Rootless=true, container kernel == node kernel   (lesson 2 holds)
 gVisor          : 4.19.0-gvisor                                    (lesson 3 holds)
 node hardening  : unprivileged_bpf_disabled=2, perf_event_paranoid=4, kptr_restrict=1

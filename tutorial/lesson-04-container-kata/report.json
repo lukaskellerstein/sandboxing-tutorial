@@ -2,8 +2,9 @@
   "lesson": "lesson-04-container-kata",
   "mode": "network-on",
   "boundary": "hardened container + Kata Containers (per-container VM), ordinary network",
-  "generated_at": "2026-08-07T21:04:05+02:00",
+  "generated_at": "2026-08-11T15:43:54+02:00",
   "complete": true,
+  "duration_s": 74.4,
   "blocked": 7,
   "scored": 13,
   "host": {
@@ -47,6 +48,15 @@
       "value": "200",
       "detail": "http://169.254.42.42/conf \u2014 the target accepted it",
       "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "k8s_sa_token",
+      "attack": "?",
+      "why": "",
+      "group": "reach",
+      "value": "n/a-no-cluster",
+      "detail": "not running in a pod",
+      "verdict": "INFO"
     },
     {
       "name": "home_items",
@@ -125,7 +135,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 20.6,
+      "value": 19.2,
       "detail": "",
       "verdict": "INFO"
     },
@@ -134,7 +144,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 126.6,
+      "value": 112.9,
       "detail": "",
       "verdict": "INFO"
     },

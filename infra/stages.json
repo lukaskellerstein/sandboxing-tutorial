@@ -1,0 +1,273 @@
+{
+  "_comment": [
+    "THE stage manifest. What steps an operation has, in what order, and how long each one took the",
+    "last time it was measured. Read by bash with jq and by ctl.py with json — the same bytes, for",
+    "exactly the reason lessons.json gives for existing: a generated second copy is how two readers",
+    "come to disagree, and a stage list that disagrees with the script is worse than no stage list,",
+    "because it reports progress against steps that are not the ones running.",
+    "",
+    "`expect_s` is MEASURED, never estimated. Every value for openshift-sno comes from the timeline in",
+    "openshift-sno/REPRODUCE.md section 7 (the 2026-08-10 run that produced a working cluster), and the",
+    "lesson values from chapter 1-3 runs on 2026-08-06 and 2026-08-08. They exist so a wait can say",
+    "'4m of an expected 7m' instead of going silent, which is the difference between a slow step and a",
+    "hung one. They are a starting point, not the truth: ctl.py overrides any of them from the most",
+    "recent SUCCESSFUL run recorded in .state/, so the numbers self-calibrate when the hardware moves.",
+    "",
+    "A stage id is a resume point. `install.sh --from <id>` and `ctl.py up --from <id>` both take these",
+    "names, so renaming one is a breaking change to a documented interface — REPRODUCE.md section 7",
+    "prints `./install.sh --from api` as the recovery move. install.sh READS the openshift-sno ids from",
+    "here rather than keeping its own copy, so the order below is the order it runs: it kept a second",
+    "list once, the two drifted by one stage (`preflight`), and the cost was a watcher permanently",
+    "stuck at 9/10 plus a `--from preflight` that ran nothing and reported success.",
+    "",
+    "`billable` marks the stages that cost money. Everything before the first billable stage is free,",
+    "which is the whole design of preflight: find out for EUR 0 rather than with a box already running.",
+    "",
+    "Lesson substrate stages are NOT listed here. They come from lessons.json, per lesson, because that",
+    "file is the only per-lesson table; `substrate_expect_s` below carries only the duration hint for",
+    "each substrate script, keyed by the same name lessons.json uses."
+  ],
+
+  "openshift-sno": {
+    "kind": "cluster",
+    "driver": "openshift-sno/install.sh",
+    "stages": [
+      {
+        "id": "preflight",
+        "title": "Preflight",
+        "detail": "release pin, artifacts, metal stock, credentials, lesson-13 deps",
+        "expect_s": 60,
+        "billable": false
+      },
+      {
+        "id": "provision",
+        "title": "Provision the box",
+        "detail": "scw orders EM-B112X-SSD, Scaleway installs Ubuntu, then sshd settles",
+        "expect_s": 960,
+        "billable": true
+      },
+      {
+        "id": "facts",
+        "title": "Capture facts",
+        "detail": "machineNetwork CIDR and the install disk's WWN, read off the box",
+        "expect_s": 30,
+        "billable": true
+      },
+      {
+        "id": "ignition",
+        "title": "Generate ignition",
+        "detail": "install-config, single-node ignition, disk-wipe unit, arm64 wrap",
+        "expect_s": 180,
+        "billable": true
+      },
+      {
+        "id": "kexec",
+        "title": "kexec into RHCOS live",
+        "detail": "push the 109 KB ignition and jump; the box is RHCOS in RAM afterwards",
+        "expect_s": 90,
+        "billable": true,
+        "//rewrites_box": [
+          "The one stage that cannot be re-run against a cluster you want to keep: it replaces the",
+          "operating system and the ignition wipes every disk first. A resume from HERE, or from any",
+          "stage before it, therefore destroys a working cluster on its way past — which is why the",
+          "panel asks a different question before starting one. Read as data, not prose: the flag is",
+          "what the confirmation is computed from, so it must stay on whichever stage that is true of."
+        ],
+        "rewrites_box": true
+      },
+      {
+        "id": "api",
+        "title": "Bootstrap and roll out",
+        "detail": "bootkube, install-to-disk, pivot reboot, node registers, trimmed operator set",
+        "expect_s": 3720,
+        "billable": true,
+        "//substages": [
+          "An hour in one row is not progress, so this stage reports the three phases it can actually",
+          "OBSERVE — no more. Each boundary below is a state change the wait loop already reads, which",
+          "is the whole test for whether a substage may exist: install-to-disk and the pivot reboot are",
+          "one interval here and not two, because from the workstation they are indistinguishable (the",
+          "box is simply not answering, then a node appears). Inventing the split would report a",
+          "transition nobody measured.",
+          "",
+          "The three expect_s sum to the parent's 3720. They come from the same REPRODUCE.md section 7",
+          "timeline: 09:02->09:09 bootkube, 09:09->09:46 install-to-disk + pivot + the node registering,",
+          "09:46->10:04 operators. The middle one is inflated: that run hit the api-int DNS deadlock of",
+          "section 8, which node_dns now repairs, so expect it to fall to roughly a third once a clean",
+          "run recalibrates it."
+        ],
+        "substages": [
+          {
+            "id": "bootkube",
+            "title": "Bootstrap control plane",
+            "detail": "a throwaway control plane runs from RAM until /opt/openshift/.bootkube.done",
+            "expect_s": 420
+          },
+          {
+            "id": "install-to-disk",
+            "title": "Install to disk, pivot, register",
+            "detail": "the permanent system is written, the box reboots into it, the kubelet joins — where the api-int deadlock lives",
+            "expect_s": 2220
+          },
+          {
+            "id": "operators",
+            "title": "Operators roll out",
+            "detail": "the trimmed operator set reconciles on one node; the *.apps-blocked pair never will",
+            "expect_s": 1080
+          }
+        ]
+      },
+      {
+        "id": "storage",
+        "title": "Pre-provision storage",
+        "detail": "hostPath PVs labelled container_file_t — SNO ships no StorageClass",
+        "expect_s": 60,
+        "billable": true
+      },
+      {
+        "id": "kata",
+        "title": "Sandboxed containers + Kata",
+        "detail": "OSC operator, then KataConfig — no reboot: the extension is a day-1 manifest",
+        "expect_s": 1500,
+        "billable": true
+      },
+      {
+        "id": "openshell",
+        "title": "OpenShell gateway",
+        "detail": "privileged SCC for the sandbox SA, then the pinned 0.0.99 chart",
+        "expect_s": 180,
+        "billable": true
+      },
+      {
+        "id": "verify",
+        "title": "Verify from inside",
+        "detail": "Kata pod reports DMI=KVM, SCC refuses a privileged pod, gateway Running",
+        "expect_s": 180,
+        "billable": true
+      }
+    ]
+  },
+
+  "lesson": {
+    "kind": "lesson",
+    "driver": "up.sh",
+    "stages": [
+      {
+        "id": "provision",
+        "title": "Provision the box",
+        "detail": "Terraform apply for the whole claimed set, then this lesson's state file",
+        "expect_s": 90,
+        "billable": true
+      },
+      {
+        "id": "ssh",
+        "title": "Wait for ssh",
+        "detail": "two consecutive successes — sshd flaps during first boot",
+        "expect_s": 90,
+        "billable": true
+      },
+      {
+        "id": "cloud-init",
+        "title": "Wait for cloud-init",
+        "detail": "it creates the unprivileged agent user and enables lingering",
+        "expect_s": 60,
+        "billable": true
+      },
+      {
+        "id": "sync",
+        "title": "Copy the repo",
+        "detail": "bootstrap rsync over plain ssh, then mirror the tree",
+        "expect_s": 60,
+        "billable": true
+      },
+      {
+        "id": "tooling",
+        "title": "Install uv",
+        "detail": "curl, ca-certificates, jq, then the uv installer",
+        "expect_s": 60,
+        "billable": true
+      },
+      {
+        "id": "substrates",
+        "title": "Install substrates",
+        "detail": "expanded per lesson from lessons.json; see substrate_expect_s",
+        "expect_s": 0,
+        "billable": true
+      },
+      {
+        "id": "check",
+        "title": "Assert the boundary",
+        "detail": "check.sh, read from inside the box and never from the flag we passed",
+        "expect_s": 60,
+        "billable": true
+      }
+    ]
+  },
+
+  "substrate_expect_s": {
+    "10-podman": 90,
+    "20-runsc": 60,
+    "30-containerd-kata": 600,
+    "40-openshell": 300,
+    "50-nat-vm": 600,
+    "60-k8s": 120,
+    "70-k8s-gvisor": 90,
+    "80-k8s-kata": 600,
+    "90-k8s-openshell": 420
+  },
+
+  "run": {
+    "kind": "lesson-run",
+    "driver": "run.sh",
+    "stages": [
+      {
+        "id": "wait-box",
+        "title": "Wait for the box",
+        "detail": "instant on a ready box; otherwise polls until up.sh finishes provisioning it",
+        "expect_s": 0,
+        "billable": true
+      },
+      {
+        "id": "sync",
+        "title": "Sync the lesson tree",
+        "detail": "rsync the repo to the box; results/ is excluded in both directions",
+        "expect_s": 30,
+        "billable": true
+      },
+      {
+        "id": "lesson",
+        "title": "Run the lesson",
+        "detail": "uv sync then main.py, on the box, where the boundary is",
+        "expect_s": 600,
+        "billable": true
+      },
+      {
+        "id": "fetch",
+        "title": "Fetch the scorecard",
+        "detail": "bring results/<lesson>.json home and render the report",
+        "expect_s": 30,
+        "billable": true
+      }
+    ]
+  },
+
+  "down": {
+    "kind": "teardown",
+    "driver": "down.sh",
+    "stages": [
+      {
+        "id": "destroy",
+        "title": "Destroy the box",
+        "detail": "Terraform re-apply with this lesson subtracted",
+        "expect_s": 120,
+        "billable": true
+      },
+      {
+        "id": "sweep",
+        "title": "Sweep for orphans",
+        "detail": "ask the ACCOUNT, not the script: servers, volumes and IPs all bill on their own",
+        "expect_s": 30,
+        "billable": false
+      }
+    ]
+  }
+}

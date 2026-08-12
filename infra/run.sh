@@ -18,14 +18,28 @@ shift
 [ "${1:-}" = "--" ] && shift
 ARGS="$*"
 
+# A run may be asked for while ./up.sh is still building the box — the panel's `u` then `r`,
+# seconds apart. Running early is not merely premature: the rsync below and up.sh's sync stage
+# would mirror the same tree concurrently, and their --delete passes destroy each other's temp
+# files, killing the provision with rsync rc 23. So wait, visibly, until up.sh declares the box
+# ready (BOX_READY in .state), and only then load its state — instant when the box already is.
+run_track run "${LESSON}"
+
+stage_begin wait-box "waiting for the box to be ready"
+box_wait_ready "${LESSON}"
+stage_end ok
+
 state_load "${LESSON}"
 
+stage_begin sync "syncing the lesson tree"
 say "syncing the lesson tree to the box"
 rsync -az --delete -e "$(box_rsync_shell "${LESSON}")" \
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude 'results' \
   --exclude '.state' --exclude '.ruff_cache' \
   "${REPO_ROOT}/" "box:sandboxing-tutorial/"
+stage_end ok
 
+stage_begin lesson "running ${LESSON}"
 say "running ${LESSON} on ${BOX_IP}"
 # SANDBOXING_TUTORIAL_DISPOSABLE=1 is the box telling the lesson it is allowed to do real damage.
 # Only ever set here, and only on a machine `down.sh` is about to destroy.
@@ -37,13 +51,22 @@ say "running ${LESSON} on ${BOX_IP}"
 # boundary. Measured on a Scaleway VM 2026-08-06: 169.254.169.254 -> 000, 169.254.42.42 -> 200.
 METADATA_URL="${PROBE_METADATA_URL:-http://169.254.42.42/conf}"
 
-box_ssh "${LESSON}" "source ~/.sandboxing-tutorial.env 2>/dev/null; cd sandboxing-tutorial/tutorial/${LESSON} \
+# Colour the scorecard only when a HUMAN is watching — our own stdout is a terminal. When ctl.py's
+# worker runs us the output is piped ([ -t 1 ] is false), so the captured log stays greppable and
+# the TUI pane, which cannot render ANSI, never sees an escape. Set it on the box (scorecard.py reads
+# CLICOLOR_FORCE), because the lesson's stdout there is a pipe over ssh and would otherwise strip it.
+COLOR_EXPORT=""
+[ -t 1 ] && COLOR_EXPORT="export CLICOLOR_FORCE=1 && "
+
+box_ssh "${LESSON}" "source ~/.sandboxing-tutorial.env 2>/dev/null; ${COLOR_EXPORT}cd sandboxing-tutorial/tutorial/${LESSON} \
   && export PATH=\$HOME/.local/bin:\$PATH \
   && export SANDBOXING_TUTORIAL_DISPOSABLE=1 \
   && export PROBE_METADATA_URL=${METADATA_URL} \
   && uv sync --quiet \
   && uv run python -u main.py ${ARGS}"
+stage_end ok
 
+stage_begin fetch "fetching the scorecard"
 say "fetching results/"
 mkdir -p "${REPO_ROOT}/results"
 rsync -az -e "$(box_rsync_shell "${LESSON}")" \
@@ -58,3 +81,4 @@ find "${REPO_ROOT}/results" -maxdepth 1 -name '*.json' -exec basename {} \; 2>/d
 # lesson's result — hence `|| true`.
 say "rendering ${LESSON}'s report"
 python3 "${HERE}/report/render.py" "${LESSON}" || true
+stage_end ok

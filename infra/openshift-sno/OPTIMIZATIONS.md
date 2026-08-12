@@ -35,15 +35,28 @@ scw baremetal offer list zone=fr-par-1 -o json \
 # 4. credentials present (never print them)
 ls -l ~/.secrets/rh-pull-secret.json && scw account project list -o json | jq -r '.[].name'
 
-# 5. lesson 13's upstream deps
+# 5. lesson 13's upstream deps — at the versions CHAPTER 3 pinned, not older ones
 curl -fsS -o /dev/null -w 'agent-sandbox %{http_code}\n' -L \
-  https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.3/sandbox.yaml
-helm show chart oci://ghcr.io/nvidia/openshell/helm-chart --version 0.0.42 >/dev/null && echo "openshell chart ok"
+  https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.4/sandbox.yaml
+helm show chart oci://ghcr.io/nvidia/openshell/helm-chart --version 0.0.99 >/dev/null && echo "openshell chart ok"
 ```
+
+> All five are now implemented as `./install.sh --preflight`, so there is nothing to
+> copy-paste and nothing to forget. Run it before every session.
 
 On 2026-08-05 all five passed and `stable-4.18` was still `4.18.49`, so the pin
 had not drifted in a year of wall-clock. That is luck, not a guarantee — the
 point of the check is that finding out costs €0 instead of €0.26/hr.
+
+**On 2026-08-10 the pin HAD drifted: `stable-4.18` is now `4.18.50`.** The 4.18.49
+artifacts are still served, so this repo stays on the version it actually proved and
+the preflight reports the drift as information rather than as a failure. That is the
+check earning its keep on the second outing.
+
+Two version numbers in this file were also stale by then and are corrected above:
+lesson 13's deps were listed at agent-sandbox `v0.5.3` and openshell `0.0.42`, while
+chapter 3 shipped against `v0.5.4` and `0.0.99`. A preflight that checks the wrong
+versions is worse than none — it returns green for artifacts nothing will fetch.
 
 **Do the whole ignition build before ordering, too.** `openshift-install` is
 **641 MB** and takes ~45 s to fetch; the only input that needs the real box is
@@ -328,3 +341,135 @@ confirm it is the disk the firmware boots; everything else here is secondary.
   reached a live API
 - every claim in `REPRODUCE.md` §3.6–3.8 (operator, KataConfig, Kata VM, SCC),
   which this run never got close enough to re-test
+
+---
+
+## 10. The disk fix, built and validated on the ground — 2026-08-10
+
+§5 diagnosed the failure and proposed a fix but never executed it. It is now
+implemented in [`install.sh`](install.sh), and **every part of it that can be proven
+without hardware has been**, for €0 — which is the point of §1 taken to its
+conclusion. Nothing below has yet met a real box; what is claimed is only that the
+artifacts are correct.
+
+### What the fix actually is
+
+Two independent causes had to be closed, and the §5 proposal only named one:
+
+1. **The wrong disk.** `installationDisk` is resolved by the RHCOS-live kernel, which
+   enumerated the disks the other way round from Ubuntu. Now pinned by **WWN**, read
+   off the box during fact capture:
+   `installationDisk: /dev/disk/by-id/wwn-0x...`.
+2. **A second bootable disk.** Even a perfect install is invisible if the firmware has
+   a leftover Ubuntu to boot instead — that is precisely what run 2 produced. §5
+   proposed a **two-stage kexec** to wipe both disks from RAM. That was dropped: it
+   assumes `kexec` exists inside RHCOS-live, which is not guaranteed, and it needs an
+   operator to remember a manual step on a blind box.
+
+   Instead the generated ignition is patched with `jq` to carry a unit:
+
+   ```ini
+   [Unit]
+   Description=Wipe every disk before bootstrap-in-place installs
+   DefaultDependencies=false
+   After=basic.target
+   Before=install-to-disk.service
+   ```
+
+   which runs `mdadm --stop --scan`, then `wipefs`/`sgdisk`/`dd` over every whole
+   disk, in RAM, before anything is written. One kexec, no live-env tooling assumed,
+   and the guarantee travels **inside the artifact** rather than in a runbook step.
+
+### Verified without spending anything
+
+| Claim | How it was checked |
+| :-- | :-- |
+| install-config renders with the real CIDR + WWN | rendered from faked facts, `installationDisk:` line inspected |
+| the ignition builds | `openshift-install create single-node-ignition-config` → 293 KB + `auth/` |
+| the wipe unit lands | `jq` assertion in the script, then extracted from the wrapped image |
+| the wrap works on Apple Silicon | `podman --arch arm64 coreos-installer pxe ignition wrap` → **109,916 B**, XZ cpio containing exactly `config.ign` |
+| **the WWN reaches the installer** | decoded the gzip+base64 file contents inside the ignition: `/usr/local/bin/install-to-disk.sh` runs `coreos-installer install -n -i /opt/openshift/master.ign /dev/disk/by-id/wwn-0x...` |
+
+That last one is the one worth doing. A plain `grep` of the ignition JSON for the WWN
+finds **nothing** — every file payload is gzip+base64 — so "I checked and the disk
+isn't in there" is a false alarm waiting to happen, in both directions.
+
+### The near-miss that matters most — a fix that caused the next bug
+
+Bug 1 below (`facts.env` not shell-sourceable) was fixed by **quoting** the `DISK=` lines.
+That fix silently broke the WWN extraction: `awk '{print $3}'` now returned the value
+*with its closing quote*, and it went all the way through to
+
+```yaml
+installationDisk: /dev/disk/by-id/wwn-0x5001b448b798588b"
+```
+
+— a path no device will ever match. On a live box this wipes both disks, fails to
+install, and leaves you debugging a machine with no console: **the exact shape of the
+2026-08-05 failure.** It was caught only because the script echoes the value it is about
+to use and someone read it; the kexec had not yet fired, so the box was salvaged and no
+re-provision was needed.
+
+The fix is `tr -d '"'`, but the *lesson* is the validation that is now there:
+
+```bash
+case "${INSTALL_WWN}" in
+  0x[0-9a-f]*) : ;;
+  *) die "WWN '${INSTALL_WWN}' is not of the form 0x<hex> — refusing to pin installationDisk" ;;
+esac
+```
+
+A value whose entire job is to resolve to a real device **in a different kernel, an hour
+later, with no console** deserves a shape check at capture time. "Non-empty" is not
+validation. Note also that both disks on this box have WWNs of the same shape but
+different vendors (`0x5001b448...` Seagate, `0x5002538d...` Samsung) — so "it looks like
+a WWN" is necessary, not sufficient; it must also be the disk the firmware boots.
+
+### Three bugs the dry run caught before the meter started
+
+1. **`facts.env` was not shell-sourceable.** `DISK=sda 894.3G 0x...` → `894.3G:
+   command not found`. The file is a human-readable log *and* was being `source`d;
+   it now quotes multi-word values, and `install.sh` extracts the two values it needs
+   with `awk` instead of sourcing at all.
+2. **The preflight aborted on its first failure.** A transient `curl` exit 56 on the
+   release notes killed the run under `set -e`, reporting one problem instead of
+   twelve. Preflight now runs with errexit off — a diagnostic that stops at the first
+   symptom is not a diagnostic.
+3. **The podman machine was down**, so the wrap failed. Now surfaced as a real
+   non-zero exit rather than a message scrolling past.
+
+### The device-name swap, REPRODUCED on hardware — 2026-08-10
+
+§5 inferred the swap from a post-mortem. It has now been observed directly, on
+`sbx-openshift-sno`, by reading the disks under both kernels in the same session:
+
+| | Ubuntu 24.04 | RHCOS live (after kexec) |
+| :-- | :-- | :-- |
+| `sda` | 953.9G `0x5001b448b798588b` | 931.5G `0x5002538d428fd895` |
+| `sdb` | 931.5G `0x5002538d428fd895` | **953.9G `0x5001b448b798588b`** |
+
+**They swap.** `installationDisk: /dev/sda` — what the template shipped with, and what
+`ubuntu-kexec-live.sh` still hardcodes — resolves under the live kernel to the *other*
+physical disk. That is not a theory about what went wrong in 2026-08-05; it is the same
+machine doing the same thing again, with the WWN pin now making it harmless.
+
+Note the two disks are different models (Seagate `0x5001b448…` 953.9G, Samsung
+`0x5002538d…` 931.5G), so the sizes give the swap away at a glance. Do not rely on that
+— pin the WWN and check it against the disk the firmware boots.
+
+The wipe unit also ran, first time:
+
+```text
+● sbx-wipe-disks.service - Wipe every disk before bootstrap-in-place installs
+     Active: active (exited) ... (code=exited, status=0/SUCCESS)
+     + dd if=/dev/zero of=/dev/sdb bs=1M count=16 oflag=direct
+```
+
+and both disks came out with an empty `FSTYPE` — no filesystem, no RAID superblock, and
+therefore nothing else on the machine for the firmware to boot.
+
+### Still unproven, and must not be assumed
+
+- that `Before=install-to-disk.service` orders early enough in the live env
+- everything in `REPRODUCE.md` §3.6–3.8 (operator, KataConfig, Kata VM, SCC), which
+  has not been re-tested since 2026-08-04

@@ -2,8 +2,9 @@
   "lesson": "lesson-03-container-gvisor",
   "mode": "network-on",
   "boundary": "hardened rootless container + gVisor (runsc), ordinary network",
-  "generated_at": "2026-08-07T21:00:08+02:00",
+  "generated_at": "2026-08-11T15:25:02+02:00",
   "complete": false,
+  "duration_s": 24.6,
   "blocked": 9,
   "scored": 13,
   "host": {
@@ -47,6 +48,15 @@
       "value": "200",
       "detail": "http://169.254.42.42/conf \u2014 the target accepted it",
       "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "k8s_sa_token",
+      "attack": "?",
+      "why": "",
+      "group": "reach",
+      "value": "n/a-no-cluster",
+      "detail": "not running in a pod",
+      "verdict": "INFO"
     },
     {
       "name": "home_items",
@@ -125,7 +135,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 190.7,
+      "value": 154.0,
       "detail": "",
       "verdict": "INFO"
     },
@@ -134,7 +144,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 131.8,
+      "value": 123.1,
       "detail": "",
       "verdict": "INFO"
     },

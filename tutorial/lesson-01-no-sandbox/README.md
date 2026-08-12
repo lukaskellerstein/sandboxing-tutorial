@@ -12,20 +12,12 @@ cd tutorial/lesson-01-no-sandbox
 That is the whole workflow — one command, and the box is destroyed even if the lesson
 fails. It writes `report.html` + `report.json` here beside the lesson.
 
-You can also run it directly, without any box. It then refuses to run natively and
-falls back to the stand-in, because the destructive attacks are only acceptable on a
-machine that is about to be deleted:
-
-```bash
-uv sync
-uv run python -u main.py               # stand-in unless the box says it is disposable
-uv run python -u main.py --standin     # force the stand-in
-```
-
-> Careful: a direct run **overwrites this lesson's card** in `results/` with numbers
-> from whatever machine you are on. The next comparison would then be a laptop against
-> a VM — exactly the mistake this tutorial exists to avoid. Re-run `./run.sh` to
-> restore a real measurement.
+> **`uv run main.py` is the one command.** Start the box once (`../../infra/up.sh
+> lesson-01-no-sandbox`, or press `u` in the sbx-tui panel), then run `uv run python -u
+> main.py` from this directory as often as you like — it detects the box and runs the
+> lesson **on it**, bringing the scorecard home. With no box up it runs nothing and tells
+> you to start one. The destructive attacks are a native process, only acceptable on a
+> machine about to be deleted, so there is deliberately no laptop mode.
 
 ## What it runs
 
@@ -45,33 +37,39 @@ ever aimed at anything but this box.
 The honest "no sandbox" is a **native host process on a fresh, disposable Scaleway
 VM** — which is what `infra/` provisions and destroys. Running the destructive
 attacks as a bare process on a machine you care about is exactly what you must not
-do, so this lesson **refuses to run natively unless the box is marked disposable**:
+do, so this lesson **only runs when the box marks itself disposable**:
 
-- `SANDBOXING_TUTORIAL_DISPOSABLE=1` set (infra sets it on the provisioned box) →
-  runs natively, the real baseline.
-- otherwise → falls back to `--standin`: the same suite in a fully-unconfined,
-  throwaway container. Enough of a boundary to keep your laptop safe, little
-  enough to still show the baseline. The one difference you will see is
-  `cloud_metadata`, which reads BLOCKED on a laptop (no metadata endpoint to
-  reach) and REACHED on the cloud box.
+- `SANDBOXING_TUTORIAL_DISPOSABLE=1` set (`infra/run.sh` sets it on the provisioned
+  box) → runs natively, the real baseline, and records its card.
+- otherwise (your laptop, a CI runner, anywhere else) → it runs **nothing**. It
+  prints how to start the box and exits. There is no stand-in and no laptop mode:
+  a "no sandbox" measurement is only meaningful on the machine that is about to be
+  destroyed.
 
 ## What you should see
 
 Measured on a fresh `PLAY2-NANO` VM (Ubuntu 24.04, kernel 6.8.0-106-generic):
 
+The status wording matches the HTML report exactly — **BLOCKED** (the boundary
+stopped it), **SUCCEEDED** (it got through), **INFO** (measured, not scored) — and
+is coloured green/red/dim when a terminal is watching. The last line is how long
+the lesson ran:
+
 ```text
 boundaries that held: 3/13
 
-read_credentials     5                            REACHED   .ssh/id_rsa, .aws/credentials, ...
-exfiltrate           open                         REACHED
-plant_backdoor       3                            REACHED   ~/.bashrc, ~/.profile, authorized_keys
-cloud_metadata       200                          REACHED   http://169.254.42.42/conf
-malicious_package    index-reached                REACHED
-reverse_shell        egress=open,bind=ok          REACHED
-resource_exhaustion  no-cap:pids>=200,mem>=512MB  REACHED
-kernel_identity      6.8.0-106-generic            REACHED   the SAME kernel as the node
-sys_module_count     178                          REACHED
-io_uring_setup       fd=3                         REACHED   the call succeeded
+read_credentials     5                            SUCCEEDED  .ssh/id_rsa, .aws/credentials, ...
+exfiltrate           open                         SUCCEEDED
+plant_backdoor       3                            SUCCEEDED  ~/.bashrc, ~/.profile, authorized_keys
+cloud_metadata       200                          SUCCEEDED  http://169.254.42.42/conf
+malicious_package    index-reached                SUCCEEDED
+reverse_shell        egress=open,bind=ok          SUCCEEDED
+resource_exhaustion  no-cap:pids>=200,mem>=512MB  SUCCEEDED
+kernel_identity      6.8.0-106-generic            SUCCEEDED  the SAME kernel as the node
+sys_module_count     178                          SUCCEEDED
+io_uring_setup       fd=3                         SUCCEEDED  the call succeeded
+
+  lesson run time: 3s
 ```
 
 **Ten of thirteen land untouched**, and the three that hold are worth reading

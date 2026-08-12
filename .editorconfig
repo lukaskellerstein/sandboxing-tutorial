@@ -25,6 +25,15 @@ indent_size = 2
 switch_case_indent = true
 binary_next_line = true
 
+# Extensionless shell entry points. shfmt matches on the PATH, not on the shebang, so a launcher
+# meant to be typed as `./sbx-tui` falls outside the rule above and silently gets shfmt's default
+# (tabs) while every other script in the repo is two-space. Naming it here keeps one shell style.
+[sbx-tui]
+indent_style = space
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true
+
 [Makefile]
 indent_style = tab
 

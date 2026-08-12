@@ -81,7 +81,7 @@ three-valued, because three different things can be true:
 | :-- | :-- |
 | `n/a-no-cluster` | not running in a pod at all — every chapter-1 and chapter-2 rung |
 | `absent` → BLOCKED | in a pod, no token: the automount opt-out did its job |
-| an HTTP status → REACHED | the token was there and the control plane **accepted it** |
+| an HTTP status → SUCCEEDED | the token was there and the control plane **accepted it** |
 
 The verdict is over **authentication, not authorisation**. A default service account
 is permitted almost nothing by RBAC, so asking "could it list secrets?" would score a
@@ -180,17 +180,17 @@ minutes earlier:
 attack               container     pod           changed?
 ---------------------------------------------------------
 read_credentials     BLOCKED       BLOCKED
-exfiltrate           REACHED       BLOCKED       <-- closed
+exfiltrate           SUCCEEDED     BLOCKED       <-- closed
 plant_backdoor       BLOCKED       BLOCKED
-cloud_metadata       REACHED       BLOCKED       <-- closed
-kernel_identity      REACHED       REACHED
-sys_module_count     REACHED       REACHED
+cloud_metadata       SUCCEEDED     BLOCKED       <-- closed
+kernel_identity      SUCCEEDED     SUCCEEDED
+sys_module_count     SUCCEEDED     SUCCEEDED
 kallsyms_readable    BLOCKED       BLOCKED
 bpf                  BLOCKED       BLOCKED
 io_uring_setup       BLOCKED       BLOCKED
 perf_event_open      BLOCKED       BLOCKED
-malicious_package    REACHED       BLOCKED       <-- closed
-reverse_shell        REACHED       BLOCKED       <-- closed
+malicious_package    SUCCEEDED     BLOCKED       <-- closed
+reverse_shell        SUCCEEDED     BLOCKED       <-- closed
 resource_exhaustion  BLOCKED       BLOCKED
 
 probe            container           pod     ratio
@@ -212,9 +212,9 @@ The rows that make lesson 9 necessary:
 [policy]
   egress_gateway       200        BLOCKED   should ALLOW      <-- the allow rule works
   egress_offpolicy     000        BLOCKED   should DENY       <-- the deny rule works
-  http_method_denied   200        REACHED   POST should DENY  <-- no method awareness
-  binary_scoped        200        REACHED   unlisted binary   <-- no binary awareness
-  fs_policy_write      ALLOWED    REACHED   Landlock target   <-- no path policy at all
+  http_method_denied   200        SUCCEEDED POST should DENY  <-- no method awareness
+  binary_scoped        200        SUCCEEDED unlisted binary   <-- no binary awareness
+  fs_policy_write      ALLOWED    SUCCEEDED Landlock target   <-- no path policy at all
 [reach]
   k8s_sa_token         absent     BLOCKED   automountServiceAccountToken: false
 ```

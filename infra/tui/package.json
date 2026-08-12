@@ -1,0 +1,24 @@
+{
+  "name": "sbx-tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive control panel for this repo's disposable boxes — a client of infra/ctl.py",
+  "bin": { "sbx-tui": "./sbx-tui" },
+  "scripts": {
+    "start": "tsx src/app.tsx",
+    "once": "tsx src/app.tsx --once",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ink": "^6.0.0",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": { "node": ">=20" }
+}

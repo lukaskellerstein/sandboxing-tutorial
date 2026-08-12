@@ -31,13 +31,16 @@ results/
 # entry in someone else's clone is how the wrong box gets destroyed.
 infra/.state/
 
-# Terraform — state names live, billable resources; the provider cache is ~100MB of binaries.
-infra/terraform/.terraform/
-infra/terraform/*.tfstate
-infra/terraform/*.tfstate.*
-infra/terraform/*.tfplan
-# .terraform.lock.hcl is deliberately NOT ignored — it pins the provider's version and hashes, which
-# is what makes a reader's `terraform init` resolve the same provider this was verified against.
+# Derived from the run files in infra/.state/, and rebuildable from them
+# (`ctl.py timings --rebuild`). Committing it would ship this machine's stage
+# durations as if they were the repo's.
+infra/timings.db
+
+# sbx-tui's dependencies. The TUI is the ONLY Node in this repo and nothing else depends on it —
+# `ctl.py` and every shell script run on a clone with nothing installed. package-lock.json IS
+# committed to pin what a reader's `npm install`
+# resolves to.
+infra/tui/node_modules/
 
 # Playwright MCP scratch output (screenshots, accessibility snapshots, console logs).
 .playwright-mcp/

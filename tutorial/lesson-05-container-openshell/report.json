@@ -2,14 +2,15 @@
   "lesson": "lesson-05-container-openshell",
   "mode": "network-on",
   "boundary": "ordinary runc + OpenShell policy (per-binary, method-aware) + OCSF audit",
-  "generated_at": "2026-08-07T20:54:52+02:00",
+  "generated_at": "2026-08-11T16:00:22+02:00",
   "complete": true,
+  "duration_s": 93.6,
   "blocked": 16,
   "scored": 19,
   "host": {
     "engine": "openshell",
-    "node_kernel": "6.12.100+deb13-cloud-amd64",
-    "openshell_version": "openshell 0.0.99"
+    "node_kernel": "6.12.101+deb13-cloud-amd64",
+    "openshell_version": "openshell 0.0.102"
   },
   "findings": [
     {
@@ -49,6 +50,15 @@
       "verdict": "BLOCKED"
     },
     {
+      "name": "k8s_sa_token",
+      "attack": "?",
+      "why": "",
+      "group": "reach",
+      "value": "n/a-no-cluster",
+      "detail": "not running in a pod",
+      "verdict": "INFO"
+    },
+    {
       "name": "home_items",
       "attack": "-",
       "why": "How many entries $HOME has \u2014 context, not a verdict.",
@@ -71,7 +81,7 @@
       "attack": "8",
       "why": "Is it talking to the REAL host kernel, or a sandbox's own?",
       "group": "kernel",
-      "value": "6.12.100+deb13-cloud-amd64",
+      "value": "6.12.101+deb13-cloud-amd64",
       "detail": "the SAME kernel as the node",
       "verdict": "SUCCEEDED"
     },
@@ -170,7 +180,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 52.7,
+      "value": 54.6,
       "detail": "",
       "verdict": "INFO"
     },
@@ -179,7 +189,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 117.9,
+      "value": 123.8,
       "detail": "",
       "verdict": "INFO"
     },

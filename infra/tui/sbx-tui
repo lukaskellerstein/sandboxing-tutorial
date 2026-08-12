@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# The interactive control panel. A thin launcher so nobody has to remember the npm incantation.
+#
+#   ./sbx-tui           the panel
+#   ./sbx-tui --once    one frame, then exit — works in a pipe, and is how CI checks it still builds
+#
+# OPTIONAL, ALWAYS. Nothing else in this repo depends on Node: `ctl.py` and every shell script work
+# on a clone with nothing installed, which is the property that keeps the tutorial runnable by a
+# reader who only came for the lessons. This directory is the one place Node exists, and if it is
+# missing the message below is the whole cost.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${HERE}"
+
+command -v node >/dev/null || {
+  echo "sbx-tui needs Node (>=20). Everything else in infra/ works without it:" >&2
+  echo "  python3 ../ctl.py status        the same information, no dependencies" >&2
+  exit 2
+}
+
+[ -d node_modules ] || {
+  echo "==> first run: installing sbx-tui's dependencies (node_modules is gitignored)"
+  npm install --silent
+}
+
+exec ./node_modules/.bin/tsx src/app.tsx "$@"

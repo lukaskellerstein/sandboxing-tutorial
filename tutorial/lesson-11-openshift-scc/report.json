@@ -1,0 +1,51 @@
+{
+  "lesson": "lesson-11-openshift-scc",
+  "mode": "admission",
+  "boundary": "SCC admission \u2014 the cluster refuses an over-privileged pod before it starts",
+  "generated_at": "2026-08-10T12:40:54+02:00",
+  "complete": true,
+  "blocked": 3,
+  "scored": 3,
+  "host": {
+    "engine": "openshift-sno",
+    "node_kernel": "5.14.0-427.138.1.el9_4.x86_64"
+  },
+  "findings": [
+    {
+      "name": "scc_privileged_refused",
+      "attack": "?",
+      "why": "",
+      "group": "policy",
+      "value": "Forbidden",
+      "detail": "an over-privileged pod never started",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "scc_refused_by_admission",
+      "attack": "?",
+      "why": "",
+      "group": "policy",
+      "value": "security-context-constraint",
+      "detail": "SCC, not RBAC \u2014 the SA was granted `edit` first (Trap #13)",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "scc_compliant_admitted",
+      "attack": "?",
+      "why": "",
+      "group": "policy",
+      "value": "restricted-v2",
+      "detail": "the same workload, with no runAsUser, is allowed",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "scc_count",
+      "attack": "?",
+      "why": "",
+      "group": "policy",
+      "value": 14,
+      "detail": "SCCs evaluated against every pod",
+      "verdict": "INFO"
+    }
+  ]
+}

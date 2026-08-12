@@ -112,17 +112,17 @@ exfiltrate           BLOCKED       BLOCKED
 plant_backdoor       BLOCKED       BLOCKED
 cloud_metadata       BLOCKED       BLOCKED
 k8s_sa_token         BLOCKED       BLOCKED
-kernel_identity      REACHED       BLOCKED       <-- closed
-sys_module_count     REACHED       BLOCKED       <-- closed
+kernel_identity      SUCCEEDED     BLOCKED       <-- closed
+sys_module_count     SUCCEEDED     BLOCKED       <-- closed
 kallsyms_readable    BLOCKED       BLOCKED
-bpf                  BLOCKED       REACHED       <-- OPENED
-io_uring_setup       BLOCKED       REACHED       <-- OPENED
+bpf                  BLOCKED       SUCCEEDED     <-- OPENED
+io_uring_setup       BLOCKED       SUCCEEDED     <-- OPENED
 perf_event_open      BLOCKED       BLOCKED
 egress_gateway       BLOCKED       BLOCKED
 egress_offpolicy     BLOCKED       BLOCKED
-http_method_denied   REACHED       REACHED
-binary_scoped        REACHED       REACHED
-fs_policy_write      REACHED       REACHED
+http_method_denied   SUCCEEDED     SUCCEEDED
+binary_scoped        SUCCEEDED     SUCCEEDED
+fs_policy_write      SUCCEEDED     SUCCEEDED
 malicious_package    BLOCKED       BLOCKED
 reverse_shell        BLOCKED       BLOCKED
 resource_exhaustion  BLOCKED       BLOCKED
@@ -135,8 +135,8 @@ score 14/19, for completely different reasons.
 ```text
 kernel_identity    6.18.35   BLOCKED   node runs 6.8.0-106-generic
 sys_module_count   80        BLOCKED   the guest kernel's own modules, not the node's
-bpf                fd=3      REACHED   REACHED — the call succeeded
-io_uring_setup     fd=3      REACHED   REACHED — the call succeeded
+bpf                fd=3      SUCCEEDED REACHED — the call succeeded
+io_uring_setup     fd=3      SUCCEEDED REACHED — the call succeeded
 ```
 
 `bpf()` and `io_uring_setup` **succeed inside the VM** after a plain pod refused them.
@@ -176,7 +176,7 @@ handling and the kubelet's loop are all in it, which is what you actually wait f
 
 This lesson was run on two separate boxes, and that number moved the most of anything
 here: **2.76× and 3.71×**, from ~2 s of runc against ~6 s of Kata. Every
-BLOCKED/REACHED verdict in the matrix above was **identical** across both. Treat the
+BLOCKED/SUCCEEDED verdict in the matrix above was **identical** across both. Treat the
 verdicts as reproducible and the timings as your cluster's, not the tutorial's — which
 is exactly why the lesson prints the number instead of asserting a tax.
 

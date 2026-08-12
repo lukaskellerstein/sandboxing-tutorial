@@ -302,10 +302,281 @@ kexec, verify). Secrets and generated auth are gitignored.
 
 This runbook is manual/agent-followable. To make it one-command (`infra/up.sh --openshift`):
 
-1. A `"kind": "baremetal"` row in `terraform/lessons.json` for EM-B112X — the
+1. A `"kind": "baremetal"` row in `lessons.json` for EM-B112X — the
    `lesson-box` module already builds Elastic Metal and waits on the install, so
    this is a table entry rather than a new script. Capture CIDR/disks after apply.
 2. `substrates/90-openshift-sno.sh` — generate ignition from a template + the real CIDR; boot rescue; docker-on-sdb; kexec-into-live; poll for API; add `/etc/hosts`; push `oc`.
 3. Decide the `*.apps` DNS story (on-node dnsmasq wildcard) if the web console is ever wanted.
 4. Idempotency + a `--teardown` that `scw baremetal server delete`s and reverts the client MTU.
 5. Assert-from-inside checks baked into `check.sh` (DMI=KVM for Kata; SCC reject for admission).
+
+---
+
+## 7. Third run — 2026-08-10: the install path is now scripted and it worked
+
+**Status: cluster up, Kata + SCC both re-proven.** The 2026-08-05 failure (no cluster) is
+fixed and the fix is verified on hardware. The whole path is now one command,
+[`install.sh`](install.sh), replacing §3's manual sequence.
+
+```bash
+./install.sh --preflight     # free; catches everything that can fail for €0
+./install.sh                 # preflight -> provision -> facts -> ignition -> kexec -> cluster
+./install.sh --from api      # resume after a hiccup (idempotent; skips the pivot wait)
+../down.sh openshift-sno     # DESTROY. Nothing does this for you.
+```
+
+**Watch it from a second terminal.** Two hours with no answer to "which stage is it in" is how a
+stalled step gets mistaken for a slow one — §8 below cost 37 minutes to exactly that. Every run,
+including one typed by hand, writes its stage stream to `../.state/openshift-sno/`, so:
+
+```bash
+python3 ../ctl.py status openshift-sno   # stages done, the one running, elapsed vs measured
+../tui/sbx-tui openshift-sno             # the same thing, live, with the log beside it
+```
+
+The stage ids below are `../stages.json`'s, which is also where `install.sh` reads them from — so
+`--from <id>` takes any of them, and after an interrupted run `ctl.py` names the one to resume at
+rather than leaving you to work it out (`next: up --from api`).
+
+### Timeline of the working run
+
+| Time (UTC) | Event |
+| :-- | :-- |
+| 08:43:41 | `billing_start` |
+| 08:54:30 | `install_done` (Ubuntu) — 11 min |
+| 08:59:22 | ssh answers — 5 min after install_done, box reboots in between |
+| 09:01 | ignition generated + wrapped, kexec into RHCOS live |
+| 09:02:06 | **wipe unit ran**, both disks cleared, `status=0/SUCCESS` |
+| 09:08:58 | `.bootkube.done` — bootkube finished in ~7 min |
+| 09:23 | pivot reboot; the real cluster starts answering |
+| 09:46 | **node registers** (after the `/etc/hosts` fix below) |
+| 10:04 | 32/34 operators Available |
+| 10:18 | sandboxed-containers operator `v1.12.1 Succeeded` (~40 s) |
+| 10:37:28 | `runtimeclass=kata ready=1/1` |
+
+≈ 1 h 54 m and ~€0.50, including two stalls that are now fixed in the script.
+
+### Where the hour in `api` goes
+
+That one stage is 62 of the 114 minutes, so it reports the three phases it can observe — the
+boundaries below are state changes the wait loop already reads, and they are what the panel nests
+under `api`:
+
+| Substage | From the timeline | What is happening |
+| :-- | --: | :-- |
+| `bootkube` | 09:02 → 09:09, **7 min** | a *throwaway* control plane runs from RAM: etcd, kube-apiserver, the initial cluster state |
+| `install-to-disk` | 09:09 → 09:46, **37 min** | the permanent system is written to the WWN-pinned disk, the box pivot-reboots into it, the kubelet registers the node |
+| `operators` | 09:46 → 10:04, **18 min** | the trimmed operator set reconciles, all of it on one node |
+
+The structural reason it is slow is that **SNO serialises what a normal install parallelises**: a
+multi-node install uses a separate bootstrap *machine*, and bootstrap-in-place folds that into the
+same box — two system bring-ups back to back, then every operator that would normally spread over
+three control-plane nodes reconciling on this one.
+
+The middle figure is inflated: that run hit the api-int deadlock of §8, which `node_dns` now
+repairs, so expect roughly a third of it once a clean run recalibrates the number.
+
+### The two fixes that made it work
+
+**1. Pin `installationDisk` by WWN.** The device-name swap from §5 was reproduced live —
+under Ubuntu the target was `sda`, under RHCOS-live the same physical disk is `sdb`. The
+result: root landed on `/dev/sdb4`, WWN `0x5001b448b798588b`, exactly the disk pinned, and
+the firmware booted it. A `sbx-wipe-disks.service` injected into the ignition
+(`Before=install-to-disk.service`) cleared both disks from RAM first, so nothing else on
+the machine was bootable — which is what actually went wrong in 2026-08-05.
+
+**2. The node needs `/etc/hosts` even when the client does not.** §8's `tls-server-name`
+trick removes the need for a hosts entry *for `oc`*, and it is tempting to conclude the
+step is obsolete. It is not: the **kubelet** resolves `api-int.sno.spike.lab` to register
+the node, and `platform: none` provides no DNS.
+
+```text
+Unable to register node with API server:
+  Post "https://api-int.sno.spike.lab:6443/api/v1/nodes": ... no such host
+```
+
+The symptom is a cluster that *looks* alive — API answering, `clusterversion` present —
+while `oc get nodes` is empty and the rollout sits at the same percentage. It sat at
+**541/906 for 37 minutes**. One line into the node's `/etc/hosts` plus a kubelet restart,
+and the node registered in 45 s. It **survives the KataConfig MachineConfig reboot**
+(verified), so no MachineConfig is needed.
+
+### Trap #12, demonstrated rather than described
+
+The Kata guest kernel is **byte-identical** to the node's:
+
+```text
+in the sandbox   KERNEL=5.14.0-427.138.1.el9_4.x86_64   DMI_PRODUCT=KVM  DMI_VENDOR=Red Hat
+                 NPROC=1   VIRTIO_DEVS=6   MEM_TOTAL_KB=1942580
+the node         KERNEL=5.14.0-427.138.1.el9_4.x86_64   24 cpu   198 GB
+```
+
+A "different kernel ⇒ it is a VM" test — which is exactly what chapter 3's lesson 8 uses on
+k3s — returns **no VM** here. It is a false negative on the rung that isolates most
+thoroughly. Assert by DMI, virtio and the CPU/memory gap.
+
+Worth noting the mirror image: on k3s (chapter 3) the Kata guest exposes **no DMI at all**
+while its kernel *does* differ. Neither witness works on both clusters, which is why
+lesson 8's assertion takes either one.
+
+### SCC admission, re-proven
+
+```text
+A) privileged pod as a restricted SA
+   -> Forbidden: unable to validate against any security context constraint
+      [all 15 SCCs listed, each with why it refused]
+B) compliant pod, same SA
+   -> created, scc=restricted-v2
+```
+
+Grant the SA `edit` first (Trap #13) or RBAC refuses before SCC ever runs.
+
+### Accept 32/34 — and encode it
+
+`clusterversion` never reports `Available=True` on this cluster and **never will**:
+`console` cannot resolve `…apps.sno.spike.lab` without the wildcard DNS this setup
+deliberately skips, and `authentication` follows it down. Waiting for `Available=True`
+times out after an hour on a perfectly good cluster. `install.sh` waits for a Ready node
+plus every operator *except a named set* — "any two missing" would pass a cluster whose
+etcd was the broken one.
+
+### Trap #2 revisited — try a reboot before you delete the box (2026-08-10)
+
+Trap #2 says a flaky box is "not worth debugging — delete it and provision a fresh one".
+That is more expensive than it needs to be. On the second build of this cluster the box
+reported `install_done` and then **never came back on the network at all**:
+
+```text
+install_done - Ubuntu 24.04 LTS (Noble Numbat)   13:57:08Z
+...30 minutes later
+ping  -> 100% packet loss        port 22 -> closed
+```
+
+Note the discriminator: **100% packet loss is NOT Trap #1.** The MTU blackhole shows ping
+working perfectly while SSH hangs; nothing answering at all is a different fault.
+
+`scw baremetal server reboot <id>` recovered it in ~6 minutes:
+
+```text
+14:28  reboot requested (status=stopping)
+14:31  PING OK        (then quiet again — the box boots, drops, and comes back)
+14:34  PORT 22 OPEN
+```
+
+Reboot first, delete second. A reinstall costs ~11 min of OS install plus ~5 of reboot and
+starts the billing clock on a new machine; a reboot costs ~6 min and keeps the one you have.
+Only if the reboot fails is the box genuinely a dud.
+
+Also worth knowing: on this box **both disks were the same size** (953.9G,
+`0x5001b448b798bac1` and `0x5001b448b798a1ff`). The previous build had a 953.9G/931.5G
+pair, which made the RHCOS device-name swap obvious at a glance. Here it would not have
+been. Do not lean on size to identify the disk — that is exactly why it is pinned by WWN.
+
+---
+
+## 8. `--from api` — three bugs that all looked like a broken cluster
+
+The 2026-08-10 build was interrupted mid-bootstrap and resumed with `./install.sh --from api`.
+That resume path had never actually been exercised, and it failed three times in a row **on a
+perfectly healthy cluster**. All three are fixed; they are recorded because each one presents
+as an infrastructure fault and is not one.
+
+### 8.1 `set -e` + `pipefail` kill the wait loops on their own success condition
+
+Two loops died silently with exit 1 and no message:
+
+```bash
+s="$(node_ssh '...')"                                        # ssh is DOWN during the pivot
+node=$(oc get nodes --no-headers 2>/dev/null | awk … | head -1)   # NO nodes yet, by definition
+```
+
+`ssh` returns 255 when the box is rebooting, and `oc get nodes` exits non-zero when the cluster
+is empty. `set -o pipefail` promotes that over `head`'s 0, and **a failed command substitution
+in a plain assignment trips `set -e`**. So each loop aborted on precisely the state it existed
+to wait for.
+
+The tell is the shape of the failure: the step header prints, then nothing — not even the
+loop's own first status line — and `$?` is 1 with an empty stderr. `bash -x` is unnecessary;
+if a wait loop dies before its first heartbeat, suspect the assignment, not the cluster.
+
+Fixed by `|| true` on every probe substitution. Note an `if` condition is *not* protection —
+errexit is suspended for the condition itself, but `s=$(...)` on the next line is a bare
+assignment again.
+
+### 8.2 `/run/ostree-booted` is not "bootstrap finished"
+
+Added as a cheap short-circuit so `--from api` would not wait for a marker that had already
+been and gone. It is wrong: the file exists from the moment the machine boots off the disk,
+which is the **start** of the bootstrap-in-place phase. Measured — it declared "bootstrap is
+done" over a cluster four minutes into bootstrap, and the operator loop then hunted for
+operators that could not exist yet.
+
+### 8.3 `.bootkube.done` exists, then stops existing
+
+The marker's real lifecycle, both halves measured on the same box:
+
+| Time (UTC) | State | `/opt/openshift/.bootkube.done` |
+| :-- | :-- | :-- |
+| 12:44 | bootstrap control plane running from disk | **present** |
+| 14:52 | after the pivot reboot | **gone** — `/opt/openshift` is cleaned out |
+
+So waiting only for the marker hangs 45 minutes on an already-pivoted cluster, and waiting
+only for its absence never starts. `wait_api` now breaks on **either** the marker **or** a
+registered node, which between them cover the whole timeline.
+
+### 8.4 What a healthy post-pivot boot actually looks like
+
+Worth knowing so it is not mistaken for a loop. After the pivot, `bootkube.service` goes
+`activating` **again** — it is running `bootstrap-in-place-post-reboot.sh`, which releases the
+bootstrap leases, restores the CVO overrides, and then sits in:
+
+```text
+Waiting for node to report ready status
+Approving csrs ...
+```
+
+That is the node registering, not a stall. And the machine reboots **twice**, not once — the
+pivot, then the MCO applying the final rendered MachineConfig — so any message promising
+"expected once" is wrong.
+
+### 8.5 Trap #10 comes back, and `node_dns()` running once is not enough
+
+The most expensive fault of the day, and it presents as a stalled install with no error at
+all. The convergence loop sat at `api-nodes=0` while the cluster looked fine from outside —
+API answering, node booted, kubelet active. The kubelet's journal had the answer:
+
+```text
+Failed to contact API server when waiting for CSINode publishing:
+  dial tcp: lookup api-int.sno.spike.lab on 51.159.69.156:53: no such host
+```
+
+**`/etc/hosts` does not survive the reboots.** `node_dns()` had written the `api`/`api-int`
+entries at 16:43 and they were gone by 17:03 — the pivot and the MCO's final MachineConfig
+apply both replace the file. Without the name the kubelet cannot reach `api-int`, so it
+never submits a CSR, so the node never registers, so the wait can never end. It is a
+deadlock, and both halves look healthy in isolation.
+
+The causal chain, measured:
+
+```text
+17:03:37  entry restored in /etc/hosts, kubelet restarted
+17:03:41  csr-2bpvk  Pending          <- four seconds later
+17:03:58  node registered (NotReady)
+17:05:42  node Ready
+```
+
+So `node_dns()` must be re-applied **after the last reboot**, not once before them. Calling
+it once between the bootstrap wait and the operator wait — which is where it sits — is only
+correct if no further reboot happens, and one always does. Until it is moved inside the
+convergence loop, a resumed install needs this run alongside it:
+
+```bash
+while true; do
+  ssh core@<ip> 'grep -q api-int /etc/hosts || { sudo sh -c "echo \"<ip> api.sno.spike.lab api-int.sno.spike.lab\" >> /etc/hosts"; sudo systemctl restart kubelet; }'
+  sleep 30
+done
+```
+
+The discriminator that saves the time: if the node is up and the API answers but
+`oc get nodes` is empty **and `oc get csr` is empty too**, it is never a slow rollout. No CSR
+means the kubelet is not talking to the API at all, and DNS is the first thing to check.

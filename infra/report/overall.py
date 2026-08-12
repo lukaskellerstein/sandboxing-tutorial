@@ -48,7 +48,9 @@ def short(lesson: str) -> str:
 
 def load_reports() -> list[dict]:
     reports = []
-    for folder in sorted(TUTORIAL.glob("lesson-0*")):
+    # `lesson-*`, NOT `lesson-0*`. The narrower glob silently dropped every lesson from 10 up:
+    # the page rendered fine and simply omitted chapter 4, which is the worst kind of quiet.
+    for folder in sorted(TUTORIAL.glob("lesson-*")):
         path = folder / "report.json"
         if not path.exists():
             continue

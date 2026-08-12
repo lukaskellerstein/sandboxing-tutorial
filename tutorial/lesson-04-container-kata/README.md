@@ -118,10 +118,10 @@ this rung 11/13 while describing a deployment nobody ships.
 
 ```text
 attack               verdict     value
-exfiltrate           REACHED     open
-cloud_metadata       REACHED     200
-malicious_package    REACHED     index-reached
-reverse_shell        REACHED     stage=no-stage-url,egress=open,bind=ok
+exfiltrate           SUCCEEDED   open
+cloud_metadata       SUCCEEDED   200
+malicious_package    SUCCEEDED   index-reached
+reverse_shell        SUCCEEDED   stage=no-stage-url,egress=open,bind=ok
 
 7/13
 ```

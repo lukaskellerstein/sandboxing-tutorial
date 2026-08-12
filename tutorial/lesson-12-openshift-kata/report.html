@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>12 openshift-kata — scorecard</title>
+<style>
+:root { color-scheme: light dark;
+  --bg:#fff; --fg:#1a1a1a; --dim:#666; --line:#e3e3e3; --card:#fafafa;
+  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; }
+@media (prefers-color-scheme: dark) { :root {
+  --bg:#14161a; --fg:#e8e8ea; --dim:#9a9aa2; --line:#2a2d34; --card:#1b1e24;
+  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; } }
+:root[data-theme="dark"] {
+  --bg:#14161a; --fg:#e8e8ea; --dim:#9a9aa2; --line:#2a2d34; --card:#1b1e24;
+  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; }
+:root[data-theme="light"] {
+  --bg:#fff; --fg:#1a1a1a; --dim:#666; --line:#e3e3e3; --card:#fafafa;
+  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; }
+* { box-sizing:border-box; }
+body { margin:0; padding:2rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
+  font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.wrap { max-width:960px; margin:0 auto; }
+h1 { font-size:1.55rem; margin:0 0 .2rem; }
+h2 { font-size:.78rem; text-transform:uppercase; letter-spacing:.07em; color:var(--dim);
+     margin:1.8rem 0 .35rem; font-weight:600; }
+.sub { color:var(--dim); margin:0 0 1.2rem; font-size:.9rem; }
+.note { color:var(--dim); font-size:.86rem; }
+.score { font-size:1.5rem; font-weight:700; margin:.2rem 0 .1rem; }
+.score small { font-size:.85rem; font-weight:400; color:var(--dim); }
+.bar { display:block; width:100%; max-width:320px; height:8px; border-radius:5px;
+  background:var(--badbg); overflow:hidden; margin:.35rem 0 1rem; }
+.bar span { display:block; height:100%; background:var(--ok); }
+.legend { display:flex; gap:1.25rem; flex-wrap:wrap; font-size:.84rem; color:var(--dim); margin:.6rem 0 0; }
+table { border-collapse:collapse; width:100%; font-size:.88rem; }
+td { text-align:left; padding:.42rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+.num { color:var(--dim); width:1.4rem; font-size:.78rem; }
+.probe { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.83rem;
+  font-weight:600; white-space:nowrap; }
+.why { display:block; font-family:inherit; font-size:.78rem; font-weight:400; color:var(--dim);
+  white-space:normal; max-width:30rem; }
+.value { font-family:ui-monospace,monospace; font-size:.82rem; word-break:break-word; max-width:14rem; }
+.detail { color:var(--dim); font-size:.82rem; }
+.verdict { text-align:right; font-size:.72rem; letter-spacing:.05em; font-weight:700; white-space:nowrap; }
+tr.blocked .verdict { color:var(--ok); }
+tr.succeeded .verdict { color:var(--bad); }
+tr.info .verdict { color:var(--dim); font-weight:400; }
+tr.blocked td { background:var(--okbg); }
+tr.succeeded td { background:var(--badbg); }
+.meta { display:grid; grid-template-columns:auto 1fr; gap:.1rem .8rem; margin:.6rem 0 0;
+  font-size:.8rem; color:var(--dim); background:var(--card); border:1px solid var(--line);
+  border-radius:8px; padding:.7rem .9rem; }
+.meta dt { font-family:ui-monospace,monospace; }
+.meta dd { margin:0; }
+.warn { background:var(--badbg); border-left:3px solid var(--bad); padding:.6rem .8rem;
+  border-radius:0 6px 6px 0; font-size:.86rem; margin:.8rem 0; }
+a { color:var(--accent); }
+</style></head>
+<body><div class="wrap">
+
+<h1>12 openshift-kata</h1>
+<p class="sub">OpenShift sandboxed containers: runtimeClassName: kata (per-pod KVM VM)<br>
+Generated 2026-08-10 12:42 CEST. What each probe means, and why it matters:
+<a href="../../ATTACKS.md">ATTACKS.md</a>.<br>
+This page covers <strong>this lesson only</strong>. To compare rungs, build the overall report:
+<code>python3 infra/report/overall.py</code>.</p>
+
+<p class="score">4 <small>of 4 attacks blocked</small></p>
+<span class="bar"><span style="width:100%"></span></span>
+
+<div class="legend">
+  <span><strong style="color:var(--ok)">BLOCKED</strong> the boundary stopped the attack</span>
+  <span><strong style="color:var(--bad)">SUCCEEDED</strong> the attack got what it wanted</span>
+  <span><strong>INFO</strong> measured, not scored</span>
+</div>
+<dl class="meta"><dt>engine</dt><dd>openshift-sno</dd><dt>node_kernel</dt><dd>5.14.0-427.138.1.el9_4.x86_64</dd></dl>
+
+<h2>Kernel — how much of the real kernel is exposed</h2><table><tbody><tr class="blocked"><td class="num"></td><td class="probe">kata_dmi_product<span class="why"></span></td><td class="value">KVM</td><td class="detail">a VM reports its hypervisor; metal reports a motherboard</td><td class="verdict">BLOCKED</td></tr><tr class="blocked"><td class="num"></td><td class="probe">kata_virtio_devices<span class="why"></span></td><td class="value">6</td><td class="detail">virtio devices exist only inside a VM</td><td class="verdict">BLOCKED</td></tr><tr class="blocked"><td class="num"></td><td class="probe">kata_guest_cpus<span class="why"></span></td><td class="value">2</td><td class="detail">node has 24</td><td class="verdict">BLOCKED</td></tr><tr class="blocked"><td class="num"></td><td class="probe">kata_guest_mem_kb<span class="why"></span></td><td class="value">2204728</td><td class="detail">node has 198005264Ki</td><td class="verdict">BLOCKED</td></tr><tr class="info"><td class="num"></td><td class="probe">kata_kernel_identity<span class="why"></span></td><td class="value">5.14.0-427.138.1.el9_4.x86_64</td><td class="detail">INFO, never scored here: identical to the node&#x27;s by design (Trap #12)</td><td class="verdict">INFO</td></tr></tbody></table><h2>Policy — which binary, which method (OpenShell only)</h2><table><tbody><tr class="info"><td class="num"></td><td class="probe">kata_runtimeclass<span class="why"></span></td><td class="value">kata</td><td class="detail">registered by sandboxed-containers-operator.v1.12.1</td><td class="verdict">INFO</td></tr></tbody></table>
+</div></body></html>

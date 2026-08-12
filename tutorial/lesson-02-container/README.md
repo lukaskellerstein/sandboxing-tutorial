@@ -85,16 +85,16 @@ Measured on a fresh `PLAY2-NANO` VM, against the no-sandbox rung re-run on the s
 box:
 
 ```text
-read_credentials     REACHED  ->  BLOCKED
-plant_backdoor       REACHED  ->  BLOCKED
-resource_exhaustion  REACHED  ->  BLOCKED     capped:pids,mem
-io_uring_setup       REACHED  ->  BLOCKED     ENOSYS (seccomp, not a kernel boundary)
-exfiltrate           REACHED  ->  REACHED     open
-cloud_metadata       REACHED  ->  REACHED     200
-malicious_package    REACHED  ->  REACHED     index-reached
-reverse_shell        REACHED  ->  REACHED     egress=open,bind=ok
-kernel_identity      REACHED  ->  REACHED     still 6.8.0-106-generic
-sys_module_count     REACHED  ->  REACHED     still 179
+read_credentials     SUCCEEDED  ->  BLOCKED
+plant_backdoor       SUCCEEDED  ->  BLOCKED
+resource_exhaustion  SUCCEEDED  ->  BLOCKED     capped:pids,mem
+io_uring_setup       SUCCEEDED  ->  BLOCKED     ENOSYS (seccomp, not a kernel boundary)
+exfiltrate           SUCCEEDED  ->  SUCCEEDED   open
+cloud_metadata       SUCCEEDED  ->  SUCCEEDED   200
+malicious_package    SUCCEEDED  ->  SUCCEEDED   index-reached
+reverse_shell        SUCCEEDED  ->  SUCCEEDED   egress=open,bind=ok
+kernel_identity      SUCCEEDED  ->  SUCCEEDED   still 6.8.0-106-generic
+sys_module_count     SUCCEEDED  ->  SUCCEEDED   still 179
 
 boundaries that held: 7/13
 ```
