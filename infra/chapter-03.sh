@@ -5,8 +5,9 @@
 #   ./chapter-03.sh --keep     leave them up afterwards (you pay until ./down.sh)
 #
 # It lives in infra/ beside up.sh / run.sh / down.sh because that is all it is: those three verbs in
-# the right order over a set of lessons. `tutorial/` stays one directory per lesson, so there is no
-# folder there implying a grouping the repo does not otherwise have.
+# the right order over a set of lessons. The lessons themselves live under
+# tutorial/chapter-3-kubernetes/ — one folder per chapter, the same grouping syllabus.md, the
+# shared boxes in lessons.json and these chapter runners already use.
 #
 # The reason it exists is arithmetic. Lessons 6-8 share `chapter-03-k8s`, which carries three
 # substrates and takes ~25 minutes to build; running them separately pays that three times. Here it

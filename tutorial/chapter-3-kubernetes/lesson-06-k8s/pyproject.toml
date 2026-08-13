@@ -1,0 +1,20 @@
+[project]
+name = "lesson-06-k8s"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 6: the same attacks in a hardened Pod that a cluster scheduled."
+requires-python = ">=3.12"
+# Empty on purpose. The lesson builds manifests as dicts, submits them as JSON through `kubectl`, and
+# parses the JSON lines the pod prints — all standard library. No Kubernetes client, and no YAML
+# parser: `kubectl apply` takes JSON, and a reader can see the exact object that was submitted.
+# Unlike lesson 2 this leaf needs no `pip` either, because Part 3 re-runs the previous rung inside a
+# container rather than natively in this venv.
+dependencies = []
+
+[tool.ruff]
+# Lint/format policy comes from the repo-root ruff.toml (one place to change it). It must be pulled
+# in explicitly: a leaf carrying [tool.ruff] SHADOWS the root rather than merging, so without this
+# line the leaf silently runs ruff's own defaults. Count the dirs: leaf -> tutorial -> repo root.
+extend = "../../../ruff.toml"
+# This lesson directory is its own source root, so the sibling scorecard.py and k8s.py sort as
+# first-party imports whether ruff runs here or from the repo root.
+src = ["."]

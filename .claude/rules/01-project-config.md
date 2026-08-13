@@ -17,7 +17,7 @@ description: Project configuration — architecture, paths, dev environment
 > being true.
 >
 > Chapter 4 breaks the per-lesson-box model on purpose: all four lessons share ONE
-> cluster, so `tutorial/lesson-1N-*/run.sh` neither provisions nor destroys, and the
+> cluster, so `tutorial/chapter-4-openshift/lesson-1N-*/run.sh` neither provisions nor destroys, and the
 > teardown (`infra/down.sh openshift-sno`) is a step a human owns. Nothing will do it
 > for you, and the box is €0.263/hr.
 
@@ -31,7 +31,7 @@ description: Project configuration — architecture, paths, dev environment
   `infra/` (`scw`-based provisioning + substrate scripts for the per-lesson disposable box)
 - **Build**: nothing is built. `uv sync` in a leaf resolves that leaf's
   dependencies against its own `.venv`.
-- **Run a lesson**: `cd tutorial/<lesson> && ./run.sh` — for lessons 01–09 that
+- **Run a lesson**: `cd tutorial/<chapter>/<lesson> && ./run.sh` — for lessons 01–09 that
   provisions its Scaleway VM, runs the lesson there, destroys the box (including on
   failure), and writes `report.html` + `report.json` beside the lesson.
   **Lessons 10–13 are the exception**: they run against the one shared OpenShift
@@ -102,13 +102,17 @@ python3 ~/Projects/Github/lukaskellerstein/mac-setup/projects/scripts/gen-pyrigh
 Re-run it whenever a leaf is added, and diff before committing. Without it
 basedpyright reports spurious unresolved imports across the whole tree.
 
-A lesson leaf's shape:
+A lesson leaf's shape — leaves live under their chapter folder
+(`tutorial/chapter-N-<name>/`), and the tree is the only place that
+lesson→chapter mapping exists (`infra/run.sh` resolves it with a glob;
+`lessons.json` stays keyed by bare lesson name):
 
 ```text
-lesson-N-<name>/
-├── main.py           the runnable entrypoint (< ~200 lines)
-├── README.md         the lesson text
-├── pyproject.toml    deps + [tool.ruff] extending the root config
-├── uv.lock
-└── .gitignore
+chapter-N-<name>/
+└── lesson-NN-<name>/
+    ├── main.py           the runnable entrypoint (< ~200 lines)
+    ├── README.md         the lesson text
+    ├── pyproject.toml    deps + [tool.ruff] extending the root config
+    ├── uv.lock
+    └── .gitignore
 ```

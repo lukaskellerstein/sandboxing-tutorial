@@ -7,7 +7,7 @@ would want it, and what the result tells you.
 You do not need to read this before starting. It is the reference you come back to when a
 row in the report surprises you.
 
-> **`tutorial/<lesson>/report.html`** is the generated version of this — the same probes,
+> **`tutorial/<chapter>/<lesson>/report.html`** is the generated version of this — the same probes,
 > with the actual readings from your run, sitting next to the lesson that produced them.
 > It covers that lesson alone. For the comparison across rungs, build the overall report:
 > `python3 infra/report/overall.py --open`.

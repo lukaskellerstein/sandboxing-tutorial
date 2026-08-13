@@ -335,7 +335,7 @@ Reporting is **two tiers**, and the split is deliberate:
    lesson's card, so a lesson's report is final the moment the lesson finishes and can
    never go stale because a later lesson ran. Each lesson's `main.py` produces it
    automatically.
-2. **Overall.** `infra/report/overall.py` reads every `tutorial/lesson-*/report.json` and
+2. **Overall.** `infra/report/overall.py` reads every `tutorial/*/lesson-*/report.json` and
    writes `results/overall.html` — the ladder as a matrix plus what changed rung by rung.
    Run it whenever you want the comparison; it is a view, not a result.
 
@@ -434,28 +434,33 @@ Red Hat pull secret outside the tree, `.env` is gitignored.
 sandboxing-tutorial/
 ├── README.md · syllabus.md
 ├── infra/ · results/
-└── tutorial/
-    ├── lesson-01-no-sandbox/
-    ├── lesson-02-container/
-    ├── lesson-03-container-gvisor/
-    ├── lesson-04-container-kata/
-    ├── lesson-05-container-openshell/
-    ├── lesson-06-k8s/
-    ├── lesson-07-k8s-gvisor/
-    ├── lesson-08-k8s-kata/
-    ├── lesson-09-k8s-openshell/
-    ├── lesson-10-openshift-pod/
-    ├── lesson-11-openshift-scc/
-    ├── lesson-12-openshift-kata/
-    ├── lesson-13-openshift-openshell/
-    └── lesson-14-compose-and-compare/
+└── tutorial/                       one folder per chapter, lessons inside
+    ├── chapter-1-no-sandbox/
+    │   └── lesson-01-no-sandbox/
+    ├── chapter-2-one-host/
+    │   ├── lesson-02-container/
+    │   ├── lesson-03-container-gvisor/
+    │   ├── lesson-04-container-kata/
+    │   └── lesson-05-container-openshell/
+    ├── chapter-3-kubernetes/
+    │   ├── lesson-06-k8s/
+    │   ├── lesson-07-k8s-gvisor/
+    │   ├── lesson-08-k8s-kata/
+    │   └── lesson-09-k8s-openshell/
+    └── chapter-4-openshift/
+        ├── lesson-10-openshift-pod/
+        ├── lesson-11-openshift-scc/
+        ├── lesson-12-openshift-kata/
+        └── lesson-13-openshift-openshell/
 ```
 
+Chapter 5's `lesson-14-compose-and-compare` is not written yet and has no folder until it is.
+
 Each leaf: `main.py`, `README.md`, `pyproject.toml` (with `[tool.ruff]`
-`extend = "../../ruff.toml"`), `uv.lock`, `.gitignore`. Run one with:
+`extend = "../../../ruff.toml"`), `uv.lock`, `.gitignore`. Run one with:
 
 ```bash
-cd tutorial/lesson-NN-name && uv sync && uv run python -u main.py
+cd tutorial/chapter-N-name/lesson-NN-name && uv sync && uv run python -u main.py
 ```
 
 > `-u` is not decoration. Buffered stdout makes a working lesson that is waiting on

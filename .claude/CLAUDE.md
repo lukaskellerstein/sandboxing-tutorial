@@ -35,7 +35,7 @@ do is diagnose; `shellcheck` findings come from `nvim-tools`, per
 
 **NEVER report completion without first running the affected lesson end-to-end on
 its own disposable box.** The cycle is **provision → run → validate → investigate
-on failure → destroy**, per lesson, and it is one command: `cd tutorial/<lesson>
+on failure → destroy**, per lesson, and it is one command: `cd tutorial/<chapter>/<lesson>
 && ./run.sh`. Verification is YOUR responsibility — the user should never need to
 ask you to test, and never has to tell you to tear a box down.
 
@@ -105,7 +105,7 @@ not fixed**. Report it as such rather than shipping the green run.
   *shape* being copied.
 - **podman is the preferred engine**, Docker only where a tool cannot do podman —
   and the lesson must say which and why.
-- **Each lesson is self-contained** — `cd tutorial/<lesson> && ./run.sh` provisions
+- **Each lesson is self-contained** — `cd tutorial/<chapter>/<lesson> && ./run.sh` provisions
   the box it runs on, runs it there, and destroys it. No workspace, no shared package, no
   imports across leaves. Running it *is* the test; there is no repo-wide suite. Each
   lesson writes `report.html` + `report.json` beside itself;
@@ -156,7 +156,7 @@ own throwaway sandboxes. None of them is a licence to act repo-wide or
 cluster-wide.
 
 - `uv sync` / `uv lock` inside one named lesson leaf
-- **Testing one named lesson end-to-end: `cd tutorial/<lesson> && ./run.sh`.** This
+- **Testing one named lesson end-to-end: `cd tutorial/<chapter>/<lesson> && ./run.sh`.** This
   is the test step. It provisions a Scaleway VM, runs the lesson there, and destroys
   it — including on failure. Provisioning is billable and therefore pre-approved
   *only* through this path, for one named lesson at a time, and only because the
