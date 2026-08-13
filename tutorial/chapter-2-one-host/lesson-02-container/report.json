@@ -1,0 +1,178 @@
+{
+  "lesson": "lesson-02-container",
+  "mode": "network-on",
+  "boundary": "hardened rootless container, ordinary network",
+  "generated_at": "2026-08-13T22:04:43+02:00",
+  "complete": true,
+  "duration_s": 20.4,
+  "blocked": 7,
+  "scored": 13,
+  "host": {
+    "engine": "podman",
+    "node_kernel": "6.8.0-106-generic"
+  },
+  "findings": [
+    {
+      "name": "read_credentials",
+      "attack": "1",
+      "why": "Can it read your secrets? Planted API keys and SSH keys in $HOME.",
+      "group": "reach",
+      "value": 0,
+      "detail": "",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "exfiltrate",
+      "attack": "2",
+      "why": "Can it send what it stole to an outside server?",
+      "group": "reach",
+      "value": "open",
+      "detail": "raw egress (no listener set)",
+      "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "plant_backdoor",
+      "attack": "3",
+      "why": "Can it leave something behind that runs again later?",
+      "group": "reach",
+      "value": 0,
+      "detail": "",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "cloud_metadata",
+      "attack": "4",
+      "why": "Can it reach the cloud's credential service? (the classic SSRF)",
+      "group": "reach",
+      "value": "200",
+      "detail": "http://169.254.42.42/conf \u2014 the target accepted it",
+      "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "k8s_sa_token",
+      "attack": "?",
+      "why": "",
+      "group": "reach",
+      "value": "n/a-no-cluster",
+      "detail": "not running in a pod",
+      "verdict": "INFO"
+    },
+    {
+      "name": "home_items",
+      "attack": "-",
+      "why": "How many entries $HOME has \u2014 context, not a verdict.",
+      "group": "reach",
+      "value": 3,
+      "detail": "",
+      "verdict": "INFO"
+    },
+    {
+      "name": "secretish_env",
+      "attack": "-",
+      "why": "Secret-looking environment variables \u2014 context, not a verdict.",
+      "group": "reach",
+      "value": 1,
+      "detail": "",
+      "verdict": "INFO"
+    },
+    {
+      "name": "kernel_identity",
+      "attack": "8",
+      "why": "Is it talking to the REAL host kernel, or a sandbox's own?",
+      "group": "kernel",
+      "value": "6.8.0-106-generic",
+      "detail": "the SAME kernel as the node",
+      "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "sys_module_count",
+      "attack": "8",
+      "why": "Can it enumerate the host's loaded kernel modules?",
+      "group": "kernel",
+      "value": 179,
+      "detail": "",
+      "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "kallsyms_readable",
+      "attack": "8",
+      "why": "Can it read kernel symbol addresses (exploit aid)?",
+      "group": "kernel",
+      "value": false,
+      "detail": "",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "bpf",
+      "attack": "8",
+      "why": "Can it call bpf() \u2014 a powerful, CVE-rich kernel interface?",
+      "group": "kernel",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "io_uring_setup",
+      "attack": "8",
+      "why": "Can it call io_uring_setup() \u2014 a large kernel attack surface?",
+      "group": "kernel",
+      "value": "ENOSYS",
+      "detail": "not implemented \u2014 a user-space kernel",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "perf_event_open",
+      "attack": "8",
+      "why": "Can it call perf_event_open() \u2014 kernel profiling?",
+      "group": "kernel",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
+      "verdict": "BLOCKED"
+    },
+    {
+      "name": "syscall_ms",
+      "attack": "-",
+      "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
+      "group": "cost",
+      "value": 51.4,
+      "detail": "",
+      "verdict": "INFO"
+    },
+    {
+      "name": "cpu_ms",
+      "attack": "-",
+      "why": "CPU-bound work, in ms \u2014 for comparison.",
+      "group": "cost",
+      "value": 128.3,
+      "detail": "",
+      "verdict": "INFO"
+    },
+    {
+      "name": "malicious_package",
+      "attack": "5",
+      "why": "Can a dependency run code just by being installed?",
+      "group": "abuse",
+      "value": "index-reached",
+      "detail": "setup.py code ran offline",
+      "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "reverse_shell",
+      "attack": "6",
+      "why": "Can it download a second payload and open a way in?",
+      "group": "abuse",
+      "value": "stage=no-stage-url,egress=open,bind=ok",
+      "detail": "fetch + connect-out, never detonated",
+      "verdict": "SUCCEEDED"
+    },
+    {
+      "name": "resource_exhaustion",
+      "attack": "7",
+      "why": "Can it take the machine down with a fork bomb?",
+      "group": "abuse",
+      "value": "capped:pids,mem",
+      "detail": "fork + memory, hard ceiling",
+      "verdict": "BLOCKED"
+    }
+  ]
+}

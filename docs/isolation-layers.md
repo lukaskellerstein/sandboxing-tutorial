@@ -442,8 +442,8 @@ Every number on this page was measured by a lesson in this repo and read out of
 its `report.json` — none is hand-entered.
 
 - `syllabus.md` — the source of truth for the lesson list and the scoreboard
-- `tutorial/lesson-04-container-kata/README.md` — the QEMU-vs-Firecracker
+- `tutorial/chapter-2-one-host/lesson-04-container-kata/README.md` — the QEMU-vs-Firecracker
   measurements, and the shim/config mechanism that selects one
-- `tutorial/lesson-05-container-openshell/README.md` — the five policy probes
+- `tutorial/chapter-2-one-host/lesson-05-container-openshell/README.md` — the five policy probes
 - `ATTACKS.md` — what each of the nine attacks actually does
 - `infra/report/overall.py` — builds the cross-lesson matrix from those files

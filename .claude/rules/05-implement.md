@@ -28,19 +28,23 @@ confirmation.
 
 ## `tutorial/` — the lesson leaves
 
-One directory per lesson, each a **standalone `uv` project**. No workspace, no
-shared package, no imports across leaves: a learner clones the repo, `cd`s into
-one lesson, and runs it.
+One folder per chapter, one directory per lesson inside it, each lesson a
+**standalone `uv` project**. No workspace, no shared package, no imports across
+leaves: a learner clones the repo, `cd`s into one lesson, and runs it. The tree
+is the only place the lesson→chapter mapping exists — `infra/run.sh` resolves
+`tutorial/*/<lesson>` with a glob, and `lessons.json` stays keyed by bare
+lesson name.
 
 Every leaf carries:
 
 ```text
-lesson-N-<name>/
-├── main.py           the runnable entrypoint (< ~200 lines)
-├── README.md         the lesson text
-├── pyproject.toml    deps + [tool.ruff] extending the root ruff.toml
-├── uv.lock
-└── .gitignore        .venv/, __pycache__/, *.pyc, .python-version
+chapter-N-<name>/
+└── lesson-NN-<name>/
+    ├── main.py           the runnable entrypoint (< ~200 lines)
+    ├── README.md         the lesson text
+    ├── pyproject.toml    deps + [tool.ruff] extending the root ruff.toml
+    ├── uv.lock
+    └── .gitignore        .venv/, __pycache__/, *.pyc, .python-version
 ```
 
 `pyproject.toml` must extend the root config explicitly — a leaf carrying
@@ -94,7 +98,7 @@ remove that exclusion.
 sandboxing-tutorial/
 ├── README.md                  what this is, the isolation ladder, prerequisites
 ├── syllabus.md                NOT WRITTEN YET — source of truth for lessons
-├── tutorial/                  the lesson leaves (currently empty)
+├── tutorial/                  chapter folders holding the lesson leaves
 ├── ruff.toml                  root lint/format policy for every leaf
 ├── .editorconfig              shfmt's only config source
 ├── .shellcheckrc              shellcheck opt-in

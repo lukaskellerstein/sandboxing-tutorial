@@ -295,7 +295,7 @@ def render_html(card: dict) -> str:
 <h1>{esc(short(card["lesson"]))}</h1>
 <p class="sub">{esc(card.get("boundary", ""))}<br>
 Generated {esc(stamp)}. What each probe means, and why it matters:
-<a href="../../ATTACKS.md">ATTACKS.md</a>.<br>
+<a href="../../../ATTACKS.md">ATTACKS.md</a>.<br>
 This page covers <strong>this lesson only</strong>. To compare rungs, build the overall report:
 <code>python3 infra/report/overall.py</code>.</p>
 
@@ -319,10 +319,13 @@ def render_one(lesson: str) -> Path | None:
     card = load_card(lesson)
     if card is None:
         return None
-    folder = TUTORIAL / lesson
-    if not folder.is_dir():
-        print(f"  skipping {lesson}: {folder} does not exist", file=sys.stderr)
+    # The leaf lives under its chapter folder, and the tree is the only place that mapping exists.
+    # Exactly one match, same contract as infra/run.sh: zero or many is a broken tree, not a pick.
+    folders = [p for p in TUTORIAL.glob(f"*/{lesson}") if p.is_dir()]
+    if len(folders) != 1:
+        print(f"  skipping {lesson}: tutorial/*/{lesson} matches {len(folders)} dirs, want 1", file=sys.stderr)
         return None
+    folder = folders[0]
     (folder / "report.json").write_text(json.dumps(build_json(card), indent=2) + "\n", encoding="utf-8")
     out = folder / "report.html"
     out.write_text(render_html(card), encoding="utf-8")
@@ -334,7 +337,7 @@ def main() -> None:
     do_open = "--open" in args
     wanted = [a for a in args if not a.startswith("--")]
     if not wanted:
-        wanted = sorted(p.name for p in TUTORIAL.glob("lesson-*") if p.is_dir())  # not lesson-0*: ch4 is 10-13
+        wanted = sorted(p.name for p in TUTORIAL.glob("*/lesson-*") if p.is_dir())  # not lesson-0*: ch4 is 10-13
 
     written: list[Path] = []
     for lesson in wanted:

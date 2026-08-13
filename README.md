@@ -66,11 +66,12 @@ syllabus.md            # source of truth for lessons and ordering
 ATTACKS.md             # what every probe does and why it matters, in plain language
 infra/                 # terraform + substrates; provisions and destroys the boxes
 results/               # lesson scorecards + overall.html; generated, gitignored
-tutorial/              # one directory per lesson, each a standalone uv project
-    lesson-NN-.../
-        run.sh         # THE command: provision -> run -> destroy
-        report.html    # this lesson's scorecard, generated after each run
-        report.json    # the same, machine-readable
+tutorial/              # one folder per chapter; each lesson a standalone uv project
+    chapter-N-.../
+        lesson-NN-.../
+            run.sh         # THE command: provision -> run -> destroy
+            report.html    # this lesson's scorecard, generated after each run
+            report.json    # the same, machine-readable
 ```
 
 ## Running a lesson
@@ -79,7 +80,7 @@ One command, from the lesson's own folder. It provisions that lesson's box, runs
 lesson on it, and destroys the box — **even if the lesson fails**:
 
 ```bash
-cd tutorial/lesson-03-container-gvisor
+cd tutorial/chapter-2-one-host/lesson-03-container-gvisor
 ./run.sh              # provision -> run -> destroy
 ./run.sh --keep       # ...leave the box up afterwards, for poking around
 ```

@@ -1039,9 +1039,10 @@ def driver_argv(op: str, target: str, extra: list[str]) -> list[str]:
         # Chapter 4's lessons are not in lessons.json and have no box of their own: they run on the
         # workstation against the shared cluster, so their own run.sh is the driver. Dispatching on
         # "does this lesson have a box" rather than on the lesson number keeps that true if the set
-        # of box-less lessons ever changes.
-        leaf = REPO / "tutorial" / target / "run.sh"
-        if target not in lessons() and leaf.exists():
+        # of box-less lessons ever changes. Leaves live under their chapter folder, and the tree is
+        # the only place that mapping exists — hence the glob.
+        leaf = next(iter(REPO.glob(f"tutorial/*/{target}/run.sh")), None)
+        if target not in lessons() and leaf is not None:
             return [str(leaf), *extra]
         return [str(INFRA / "run.sh"), target, *extra]
     die(f"unknown operation '{op}'")
@@ -1664,7 +1665,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "__worker":
         return worker(a.op, a.target, Path(a.events), Path(a.log), [x for x in a.rest if x != "--"])
 
-    known = list(lessons()) + [d.name for d in (REPO / "tutorial").glob("lesson-*") if d.is_dir()]
+    known = list(lessons()) + [d.name for d in (REPO / "tutorial").glob("*/lesson-*") if d.is_dir()]
     if getattr(a, "target", None) and a.cmd != "status" and a.target not in known:
         die(f"unknown target '{a.target}'. Known: {', '.join(sorted(set(known)))}")
 

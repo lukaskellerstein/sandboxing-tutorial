@@ -24,6 +24,18 @@ ARGS="$*"
 # to record under, and the report to render. Collapsing them is what made sharing impossible before.
 BOX=$(lesson_box "${LESSON}")
 
+# Lessons live under their chapter folder (tutorial/<chapter>/<lesson>), and the tree is the only
+# place that mapping exists — lessons.json stays keyed by bare lesson name, so a glob resolves the
+# directory. Demand exactly one match: zero is a lesson outside any chapter folder, two is a
+# duplicated leaf, and both are real errors rather than a silent first-wins.
+LESSON_REL=""
+for d in "${REPO_ROOT}"/tutorial/*/"${LESSON}"; do
+  [ -d "${d}" ] || continue
+  [ -z "${LESSON_REL}" ] || die "tutorial/*/${LESSON} matches more than one chapter folder"
+  LESSON_REL="${d#"${REPO_ROOT}"/}"
+done
+[ -n "${LESSON_REL}" ] || die "no tutorial/*/${LESSON} — is the lesson under a chapter folder?"
+
 # A run may be asked for while ./up.sh is still building the box — the panel's `u` then `r`,
 # seconds apart. Running early is not merely premature: the rsync below and up.sh's sync stage
 # would mirror the same tree concurrently, and their --delete passes destroy each other's temp
@@ -64,7 +76,7 @@ METADATA_URL="${PROBE_METADATA_URL:-http://169.254.42.42/conf}"
 COLOR_EXPORT=""
 [ -t 1 ] && COLOR_EXPORT="export CLICOLOR_FORCE=1 && "
 
-box_ssh "${BOX}" "source ~/.sandboxing-tutorial.env 2>/dev/null; ${COLOR_EXPORT}cd sandboxing-tutorial/tutorial/${LESSON} \
+box_ssh "${BOX}" "source ~/.sandboxing-tutorial.env 2>/dev/null; ${COLOR_EXPORT}cd sandboxing-tutorial/${LESSON_REL} \
   && export PATH=\$HOME/.local/bin:\$PATH \
   && export SANDBOXING_TUTORIAL_DISPOSABLE=1 \
   && export PROBE_METADATA_URL=${METADATA_URL} \

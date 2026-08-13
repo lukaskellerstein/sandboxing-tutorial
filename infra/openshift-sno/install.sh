@@ -729,7 +729,7 @@ kata() {
 # =============================================================================
 #
 # Both blockers here were found on a live cluster and cost real time; neither is guessable from the
-# chart's docs. They are recorded in tutorial/lesson-13-openshift-openshell/README.md and handled:
+# chart's docs. They are recorded in tutorial/chapter-4-openshift/lesson-13-openshift-openshell/README.md and handled:
 # Point the LOCAL openshell CLI at the in-cluster gateway, over a localhost port-forward.
 #
 # localhost deliberately. A NodePort would be simpler and would outlive this script — and it would
@@ -740,9 +740,9 @@ kata() {
 # on separate cadences. `gateway add` is what seeds the gateway's config directory, so nothing else
 # may touch that config first.
 register_gateway() {
-  local osh="${HERE}/../../tutorial/lesson-13-openshift-openshell/.venv/bin/openshell"
+  local osh="${HERE}/../../tutorial/chapter-4-openshift/lesson-13-openshift-openshell/.venv/bin/openshell"
   if [ ! -x "${osh}" ]; then
-    ok "openshell CLI not installed yet — run 'uv sync' in tutorial/lesson-13-openshift-openshell,
+    ok "openshell CLI not installed yet — run 'uv sync' in tutorial/chapter-4-openshift/lesson-13-openshift-openshell,
        then './install.sh --from openshell' to register the gateway"
     return 0
   fi
@@ -1050,7 +1050,7 @@ main() {
   cat <<EOF
 
   Cluster is up and verified for lessons 10-13. Next:
-    cd ../../tutorial/lesson-10-openshift-pod && ./run.sh
+    cd ../../tutorial/chapter-4-openshift/lesson-10-openshift-pod && ./run.sh
     ./install.sh --status                 cluster version + any degraded operators
     ../down.sh ${CLUSTER}                 DESTROY IT — EUR $(hourly_price EM-B112X-SSD baremetal)/hr while it lives
 

@@ -4,75 +4,81 @@
   "exclude": ["**/.venv", "**/node_modules", "**/__pycache__"],
   "executionEnvironments": [
     {
-      "root": "tutorial/lesson-01-no-sandbox",
+      "root": "tutorial/chapter-1-no-sandbox/lesson-01-no-sandbox",
       "extraPaths": [
-        "tutorial/lesson-01-no-sandbox/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-1-no-sandbox/lesson-01-no-sandbox/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-02-container",
+      "root": "tutorial/chapter-2-one-host/lesson-02-container",
       "extraPaths": [
-        "tutorial/lesson-02-container/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-2-one-host/lesson-02-container/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-03-container-gvisor",
+      "root": "tutorial/chapter-2-one-host/lesson-03-container-gvisor",
       "extraPaths": [
-        "tutorial/lesson-03-container-gvisor/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-2-one-host/lesson-03-container-gvisor/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-04-container-kata",
+      "root": "tutorial/chapter-2-one-host/lesson-04-container-kata",
       "extraPaths": [
-        "tutorial/lesson-04-container-kata/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-2-one-host/lesson-04-container-kata/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-05-container-openshell",
+      "root": "tutorial/chapter-2-one-host/lesson-05-container-openshell",
       "extraPaths": [
-        "tutorial/lesson-05-container-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-2-one-host/lesson-05-container-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-06-k8s",
+      "root": "tutorial/chapter-3-kubernetes/lesson-06-k8s",
       "extraPaths": [
-        "tutorial/lesson-06-k8s/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-3-kubernetes/lesson-06-k8s/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-07-k8s-gvisor",
+      "root": "tutorial/chapter-3-kubernetes/lesson-07-k8s-gvisor",
       "extraPaths": [
-        "tutorial/lesson-07-k8s-gvisor/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-3-kubernetes/lesson-07-k8s-gvisor/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-08-k8s-kata",
+      "root": "tutorial/chapter-3-kubernetes/lesson-08-k8s-kata",
       "extraPaths": [
-        "tutorial/lesson-08-k8s-kata/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-3-kubernetes/lesson-08-k8s-kata/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-09-k8s-openshell",
+      "root": "tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell",
       "extraPaths": [
-        "tutorial/lesson-09-k8s-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-10-openshift-pod",
+      "root": "tutorial/chapter-4-openshift/lesson-10-openshift-pod",
       "extraPaths": [
-        "tutorial/lesson-10-openshift-pod/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-4-openshift/lesson-10-openshift-pod/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-11-openshift-scc",
+      "root": "tutorial/chapter-4-openshift/lesson-11-openshift-scc",
       "extraPaths": [
-        "tutorial/lesson-11-openshift-scc/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-4-openshift/lesson-11-openshift-scc/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/lesson-12-openshift-kata",
+      "root": "tutorial/chapter-4-openshift/lesson-12-openshift-kata",
       "extraPaths": [
-        "tutorial/lesson-12-openshift-kata/.venv/lib/python3.12/site-packages"
+        "tutorial/chapter-4-openshift/lesson-12-openshift-kata/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/chapter-4-openshift/lesson-13-openshift-openshell",
+      "extraPaths": [
+        "tutorial/chapter-4-openshift/lesson-13-openshift-openshell/.venv/lib/python3.12/site-packages"
       ]
     }
   ]

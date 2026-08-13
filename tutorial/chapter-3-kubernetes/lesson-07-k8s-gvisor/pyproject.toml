@@ -1,0 +1,17 @@
+[project]
+name = "lesson-07-k8s-gvisor"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 7: the kernel boundary as one field, runtimeClassName: gvisor."
+requires-python = ">=3.12"
+# Empty on purpose — see lesson 6. Manifests are dicts submitted as JSON through `kubectl`, and the
+# pod's JSON lines are parsed with the standard library. No Kubernetes client, no YAML parser.
+dependencies = []
+
+[tool.ruff]
+# Lint/format policy comes from the repo-root ruff.toml (one place to change it). It must be pulled
+# in explicitly: a leaf carrying [tool.ruff] SHADOWS the root rather than merging, so without this
+# line the leaf silently runs ruff's own defaults. Count the dirs: leaf -> tutorial -> repo root.
+extend = "../../../ruff.toml"
+# This lesson directory is its own source root, so the sibling scorecard.py and k8s.py sort as
+# first-party imports whether ruff runs here or from the repo root.
+src = ["."]

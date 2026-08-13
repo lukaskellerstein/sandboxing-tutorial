@@ -4,7 +4,7 @@
     python3 infra/report/overall.py
     python3 infra/report/overall.py --open
 
-Reads ``tutorial/lesson-*/report.json`` — the files ``render.py`` writes next to each lesson — and
+Reads ``tutorial/*/lesson-*/report.json`` — the files ``render.py`` writes next to each lesson — and
 produces ``results/overall.html``: the ladder as a matrix, plus what changed between consecutive
 rungs.
 
@@ -50,7 +50,9 @@ def load_reports() -> list[dict]:
     reports = []
     # `lesson-*`, NOT `lesson-0*`. The narrower glob silently dropped every lesson from 10 up:
     # the page rendered fine and simply omitted chapter 4, which is the worst kind of quiet.
-    for folder in sorted(TUTORIAL.glob("lesson-*")):
+    # `*/lesson-*` because leaves live under their chapter folder; sorting by full path keeps
+    # lesson order, since chapter folders sort in chapter order.
+    for folder in sorted(TUTORIAL.glob("*/lesson-*")):
         path = folder / "report.json"
         if not path.exists():
             continue
@@ -204,7 +206,7 @@ def render(reports: list[dict]) -> str:
 <style>{CSS}</style></head>
 <body><div class="wrap">
 <h1>Sandboxing tutorial — overall</h1>
-<p class="sub">Generated {esc(stamp)} from <code>tutorial/lesson-*/report.json</code>.
+<p class="sub">Generated {esc(stamp)} from <code>tutorial/*/lesson-*/report.json</code>.
 Included: {esc(listed)}.<br>
 A <em>low</em> score is correct for lesson 1 — it is the no-sandbox baseline, and the attacks
 succeeding there are what everything else is measured against.
@@ -230,7 +232,7 @@ them, with the network still on.</p>
 def main() -> None:
     reports = load_reports()
     if not reports:
-        print("  no tutorial/lesson-*/report.json yet — run a lesson first")
+        print("  no tutorial/*/lesson-*/report.json yet — run a lesson first")
         return
     # A card written before the two-mode split carries no `mode`, so it cannot be placed in either
     # matrix and would simply not appear — a report that quietly drops a rung reads as "that rung

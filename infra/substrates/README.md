@@ -8,6 +8,13 @@ that path (`chapter-3/60-k8s`). `up.sh` interpolates it straight into the path i
 adding a chapter needs no code change; `check.sh` dispatches on the **basename**, so its
 assertions stay named after the boundary rather than after the tree.
 
+The directory names stay the short `chapter-N` on purpose: they are already
+chapter-grouped, matching `tutorial/chapter-2-one-host/` and
+`tutorial/chapter-3-kubernetes/` by number, and renaming them would touch every
+`substrates` string in `lessons.json` for a purely cosmetic gain.
+(`infra/openshift-sno/` is chapter 4's substrate in the same sense — kept apart
+because its install replaces the box's OS and cannot run through `up.sh`.)
+
 - **`chapter-2/`** — `10`–`50`, one host. One box per lesson.
 - **`chapter-3/`** — `60`–`90`, Kubernetes. `60`+`70`+`80` install onto the ONE cluster
   **lessons 6–8** share (`chapter-03-k8s`); `90` goes on lesson 9's own box. Documented at

@@ -17,7 +17,7 @@ description: "Step 1: Understand — read code, ask questions, identify gaps bef
 - Ask clarifying questions if requirements are ambiguous
 - Identify gaps in the current design and opportunities for improvement
 - Understand the requirement completely before proceeding
-- **For bug reports**: reproduce the issue first — `cd tutorial/<lesson> && ./run.sh`,
+- **For bug reports**: reproduce the issue first — `cd tutorial/<chapter>/<lesson> && ./run.sh`,
   which provisions the box, runs the lesson on it and destroys it. Capture the full
   output to a file rather than piping through `grep`, or a traceback costs a second
   provision to see. Confirm the problem before attempting a fix.
