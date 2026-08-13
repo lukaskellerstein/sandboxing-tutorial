@@ -227,7 +227,7 @@ infra/
 ├── openshift-sno/           the chapter-4 cluster: install.sh + its runbook and traps
 ├── substrates/              one script per boundary, run ON the box, grouped by chapter
 │   ├── chapter-2/           10..50 — one box per lesson
-│   └── chapter-3/           60..90 — ALL FOUR onto the one cluster lessons 6-9 share
+│   └── chapter-3/           60..90 — onto the one cluster lessons 6-8 share
 ├── report/                  scorecard -> report.html (stdlib only, no deps)
 └── images/agent/            the one image every lesson runs
 ```

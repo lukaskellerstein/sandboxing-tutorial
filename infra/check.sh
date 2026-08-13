@@ -32,6 +32,29 @@ fail() {
 }
 FAILED=0
 
+# --- which VMM booted? (both chapters) ---------------------------------------
+
+#: Three readings, one container start: "<kernel> <pci-device-count> <rootfs-fstype>". Every start
+#: here boots a VM and costs seconds, so they are taken together — and they have to come from the
+#: SAME guest anyway to be about one sandbox.
+#:
+#: The PCI count is the field that matters, because the kernel string CANNOT tell QEMU from
+#: Firecracker: both boot the identical guest kernel, and that identity is the finding lessons 4 and
+#: 8 are built on rather than a weakness of this check. Firecracker boots `pci=off` and puts virtio
+#: on MMIO; QEMU emulates a PCI host bridge. Measured: 10 devices under kata-qemu, 0 under kata-fc.
+# shellcheck disable=SC2016  # must expand inside the guest, not here
+GUEST_FACTS='echo $(uname -r) $(ls /sys/bus/pci/devices 2>/dev/null | wc -l) $(grep " / " /proc/mounts | head -1 | cut -d" " -f3)'
+
+# Ask one Kata guest what it is running on, on the CHAPTER 2 rung (nerdctl over containerd). The
+# runtime name is the only parameter that varies, which is exactly the comparison substrate 35
+# exists to make. Chapter 3 asks the same question of a Pod, through k8s_pod_output below.
+kata_guest_facts() {
+  local box="$1" runtime="$2" snapshotter="${3:-}" flags=""
+  [ -n "${snapshotter}" ] && flags="--snapshotter ${snapshotter}"
+  box_ssh "${box}" "sudo nerdctl run --rm --net none ${flags} --runtime ${runtime} \
+    --entrypoint sh ${ALPINE} -c '${GUEST_FACTS}'" 2>/dev/null | tail -1
+}
+
 # --- chapter 3 helpers -------------------------------------------------------
 
 # Run one throwaway pod and return what it printed. The runtime class is the ONLY thing that varies
@@ -196,6 +219,51 @@ for sub in $(lesson_substrates "${BOX}"); do
       echo "    kata guest DMI sys_vendor: ${dmi}"
       ;;
 
+    35-containerd-devmapper)
+      # A SECOND hypervisor under the same runtime, so the question is no longer "did a VM boot" —
+      # case 30 settled that — but "WHICH VMM booted". The kernel string cannot answer it: both
+      # hypervisors boot the identical guest kernel, which is the finding lesson 4 is built on.
+      #
+      # /sys/bus/pci/devices does answer it. Firecracker has no PCI bus at all (`pci=off` is on its
+      # kernel command line) and puts virtio on MMIO instead; QEMU emulates a PCI host bridge and
+      # hangs virtio off it. Measured on this box: 10 devices under kata-qemu, 0 under kata-fc.
+      #
+      # Both are asserted, not just the new one. This substrate makes the Firecracker config the
+      # second of Kata's two shipped config slots, and the shim falls back to the first when nothing
+      # names one — so "did kata-qemu quietly become Firecracker" is a real question here, and a
+      # silent hypervisor swap would leave every kata-qemu number in the tutorial wrong.
+      read -r q_kernel q_pci q_rootfs <<<"$(kata_guest_facts "${BOX}" io.containerd.kata.v2)"
+      read -r f_kernel f_pci f_rootfs <<<"$(kata_guest_facts "${BOX}" io.containerd.kata-fc.v2 devmapper)"
+      echo "    kata-qemu: kernel=${q_kernel:-?} pci=${q_pci:-?} rootfs=${q_rootfs:-?}"
+      echo "    kata-fc  : kernel=${f_kernel:-?} pci=${f_pci:-?} rootfs=${f_rootfs:-?}"
+
+      if [ -z "${f_kernel}" ] || [ "${f_kernel}" = "FAILED" ]; then
+        fail "Firecracker: could not run a container under io.containerd.kata-fc.v2 — is the thin-pool up?"
+      elif [ "${f_kernel}" = "${NODE_KERNEL}" ]; then
+        fail "Firecracker: guest kernel == node kernel (${f_kernel}) — no VM was created, the shim fell back"
+      elif [ "${f_pci}" != "0" ]; then
+        fail "Firecracker: the guest has ${f_pci} PCI devices — Firecracker has no PCI bus, so this is QEMU wearing the kata-fc runtime name"
+      else
+        pass "Firecracker: guest kernel ${f_kernel}, and NO PCI bus (${f_pci} devices) — virtio over MMIO, so this really is Firecracker"
+      fi
+
+      # The rootfs type is the devmapper requirement seen from the inside: Firecracker has no
+      # virtio-fs to share a directory in with, so the rootfs arrives as a block device instead.
+      case "${f_rootfs}" in
+        ext4) pass "Firecracker: rootfs is a block device (${f_rootfs}) — what the devmapper snapshotter is for" ;;
+        virtiofs) fail "Firecracker: rootfs is ${f_rootfs} — a shared FS, which Firecracker cannot do; this is not Firecracker" ;;
+        *) echo "    Firecracker rootfs '${f_rootfs}' — unexpected, but the PCI row above is the proof" ;;
+      esac
+
+      if [ "${q_pci}" = "0" ]; then
+        fail "kata-qemu has NO PCI bus — it is running Firecracker, and every kata-qemu measurement on this box is wrong"
+      elif [ -n "${q_pci}" ] && [ "${q_pci}" != "?" ]; then
+        pass "kata-qemu still gets QEMU (${q_pci} PCI devices, rootfs ${q_rootfs}) — the two hypervisors coexist"
+      else
+        fail "kata-qemu: could not read the guest at all"
+      fi
+      ;;
+
     40-openshell)
       # The substrate wrote what the CLI needs to a dedicated env file (NOT ~/.bashrc, which
       # Debian guards against non-interactive shells); source it exactly as `run.sh` does.
@@ -262,6 +330,21 @@ for sub in $(lesson_substrates "${BOX}"); do
       esac
       ;;
 
+    75-k8s-devmapper)
+      # Only the snapshotter, because that is all this substrate installs. Whether a Firecracker POD
+      # runs is asserted in the 80-k8s-kata case below, which is where both halves exist.
+      #
+      # `ok` is the only state that licenses a claim here. `skip` means containerd loaded the plugin
+      # and declined to configure it, and it is invisible until a kata-fc pod fails minutes later at
+      # sandbox creation — a failure that reads like a broken Kata install and is a missing pool.
+      state=$(box_ssh "${BOX}" "sudo k3s ctr plugins ls | awk '\$2 == \"devmapper\" {print \$4}'" 2>/dev/null | tail -1)
+      if [ "${state}" = "ok" ]; then
+        pass "devmapper snapshotter is ${state} — Firecracker has somewhere to put a block rootfs"
+      else
+        fail "devmapper snapshotter is '${state:-absent}', not ok — every kata-fc pod will fail at sandbox creation"
+      fi
+      ;;
+
     80-k8s-kata)
       # READ the class name; never guess it. kata-deploy registers one per enabled shim and the set
       # moves between releases — a hardcoded name here fails as "RuntimeClass not found" and reads
@@ -294,6 +377,38 @@ for sub in $(lesson_substrates "${BOX}"); do
         # comparison above already settled it, so an absent DMI is a fact to print, not a failure.
         dmi=$(k8s_pod_output "${BOX}" sbxchk-kata-dmi "${kclass}" cat /sys/class/dmi/id/sys_vendor)
         echo "    kata guest DMI sys_vendor: ${dmi} (absent on a minimal guest — the kernel row is the proof)"
+      fi
+
+      # --- the SECOND hypervisor, if this node carries the storage for it ------
+      #
+      # kata-deploy registers `kata-fc` on every cluster it touches, so its mere presence in the list
+      # proves nothing at all — without the devmapper snapshotter it is a class that always fails.
+      # Assert it only where substrate 75 put that snapshotter there, and read the name from the
+      # cluster with the same precedence discipline the qemu block above uses.
+      if lesson_substrates "${BOX}" | grep -q '75-k8s-devmapper'; then
+        fclass=$(box_ssh "${BOX}" \
+          "kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -x 'kata-fc' \
+           || kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep '^kata-fc' | head -1" 2>/dev/null || echo "")
+        if [ -z "${fclass}" ]; then
+          fail "Firecracker: no kata-fc RuntimeClass exists — kata-deploy registered no Firecracker shim"
+        else
+          echo "    firecracker RuntimeClass: ${fclass}"
+          # Both facts from ONE pod: each start boots a VM, and they have to describe the same guest.
+          read -r fk fpci frootfs <<<"$(k8s_pod_output "${BOX}" sbxchk-kata-fc "${fclass}" sh -c "'${GUEST_FACTS}'")"
+          echo "    kata-fc: kernel=${fk:-?} pci=${fpci:-?} rootfs=${frootfs:-?}"
+          if [ -z "${fk}" ] || [ "${fk}" = "FAILED" ]; then
+            fail "Firecracker: no pod would run under runtimeClassName ${fclass} — is the devmapper pool up?"
+          elif [ "${fk}" = "${NODE_KERNEL}" ]; then
+            fail "Firecracker: guest kernel == node kernel (${fk}) — no VM was created, the shim fell back"
+          elif [ "${fpci}" != "0" ]; then
+            # The kernel string cannot separate the two hypervisors — both boot the same guest kernel,
+            # which is lesson 8's finding rather than a gap here. The PCI bus can: Firecracker boots
+            # `pci=off` and puts virtio on MMIO, QEMU emulates a PCI host bridge.
+            fail "Firecracker: the guest has ${fpci} PCI devices — Firecracker has no PCI bus, so this is QEMU under the kata-fc name"
+          else
+            pass "Firecracker: guest kernel ${fk}, and NO PCI bus (${fpci} devices) — a different VMM, not just a different name"
+          fi
+        fi
       fi
       ;;
 

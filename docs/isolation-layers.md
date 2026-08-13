@@ -319,15 +319,52 @@ flowchart TB
 
 ## More info — for the advanced reader
 
-### Why Firecracker is documented but never demonstrated here
+### Firecracker, demonstrated on both Kata rungs
 
 Firecracker is a **VMM**, one layer below an OCI runtime, so it is **never a
-`--runtime` value**. It is reachable only as `hypervisor = firecracker` under
-Kata, which additionally wants the **devmapper snapshotter** — a storage change
-to the node, not a flag. That is a whole substrate for one config line, so this
-tutorial documents it and demonstrates `kata-qemu` instead.
+`--runtime` value**. It is reachable only as the hypervisor under Kata — the
+Layer-2 slot in the picture at the top — and it additionally needs the
+**devmapper snapshotter**, because its device model has virtio-block and **no
+virtio-fs**, so a container rootfs cannot be shared in and must arrive as a block
+device.
 
-`kata-deploy` 4.0.0 on this repo's own cluster registered **25** RuntimeClasses,
+Both rungs demonstrate it, and they teach different halves so the tutorial does
+not say the same thing twice:
+
+| | Rung | What it teaches |
+| :-- | :-- | :-- |
+| **Lesson 4** | one host, `nerdctl` | the **mechanism** — one shim binary, a config file that picks the machine, and `--snapshotter devmapper` on the command line |
+| **Lesson 8** | Kubernetes | the **selection** — the whole of that collapses into one `runtimeClassName`, chosen from a menu that also holds `gvisor` |
+
+> [!important]
+> **Firecracker is not a rung on the ladder, and the lessons prove it rather than
+> asserting it.** Both hypervisors sit on KVM and hand the workload the same guest
+> kernel, so each lesson runs its entire attack suite a second time under
+> Firecracker and diffs the two matrices. **No row moves.** Lesson 4 stays 7/13 and
+> lesson 8 stays 14/19. Swapping the VMM does not change your isolation model.
+
+What *does* change is the machine, and it has to be read from inside the guest
+because the kernel string is identical under both:
+
+| Reading, from inside | `kata-qemu` | `kata-fc` |
+| :-- | :-- | :-- |
+| `uname -r` | `6.18.35` | `6.18.35` — no help at all |
+| `/sys/bus/pci/devices` | 10–11 | **0** — Firecracker boots `pci=off` |
+| `virtio` sits on | `pci0000:00/…` | `virtio-mmio-cmdline/…` |
+| rootfs filesystem | `virtiofs` | `ext4` — a block device |
+| VMM process on the host | ~262 MB RSS | ~148 MB RSS |
+| VMM on disk | 73 MB + 321 MB firmware | **2.9 MB** |
+
+> [!danger]
+> **A `containerd-shim-kata-fc-v2` symlink silently runs QEMU.** As of Kata 4.0.0
+> the shim does not key its config off its own binary name, and `KATA_CONF_FILE` is
+> allow-listed to the two *shipped* config paths. Measured here: the symlink booted
+> QEMU under the Firecracker runtime name, reported a convincing guest kernel, and
+> exited 0. Only the empty PCI bus caught it. Kubernetes avoids the whole problem
+> because kata-deploy passes the path as a containerd runtime option (`ConfigPath`),
+> which is CRI-only and therefore unavailable to `nerdctl`.
+
+`kata-deploy` 4.0.0 on this repo's own cluster registers **35** RuntimeClasses,
 `kata-fc` among them. Always read the list rather than guessing a name:
 
 ```bash
@@ -335,7 +372,10 @@ kubectl get runtimeclass
 ```
 
 A wrong guess fails as *"RuntimeClass not found"*, which reads like a broken
-install rather than a stale assumption.
+install rather than a stale assumption. And **being in that list is not the same
+as working**: `kata-fc` was registered on this cluster from the day Kata was
+installed, and a pod naming it failed at sandbox creation with `snapshotter must
+be provided to unpack` until the node grew a devmapper thin-pool.
 
 ### Firecracker outside Kata
 
@@ -346,7 +386,7 @@ thing that makes Firecracker pod-shaped.**
 
 ### Three kernels, one node — proof this is real
 
-Chapter 3 installs `gvisor` and `kata-qemu` on the *same* k3s node, so
+Chapter 3 installs `gvisor`, `kata-qemu` and `kata-fc` on the *same* k3s node, so
 `runtimeClassName` is a genuine choice from a menu rather than the only runtime
 installed. Read from *inside* each sandbox, the kernel answers differently:
 
@@ -355,12 +395,28 @@ installed. Read from *inside* each sandbox, the kernel answers differently:
 | *omitted* | `6.8.0-106-generic` — the node's own |
 | `gvisor` | `4.19.0-gvisor` |
 | `kata-qemu` | `6.18.35` — a guest kernel |
+| `kata-fc` | `6.18.35` — the *same* guest kernel, on a different machine |
+
+That last row is why the kernel test alone is not enough once there are two
+hypervisors: it is the PCI bus, not the kernel, that separates them.
 
 > [!danger]
 > **Always assert the boundary from inside, never from the flag you passed.**
 > A workload that *intends* to run under gVisor but silently fell back to `runc`
 > exits 0 and prints everything the lesson expects. That is the characteristic
 > failure of this whole subject, and it looks exactly like success.
+
+### OpenShift gives you exactly one of those three hypervisors
+
+The Layer-2 picture at the top draws three boxes under Kata — QEMU, Firecracker,
+Cloud Hypervisor. **OpenShift sandboxed containers ships QEMU and nothing else.**
+The operator (v1.12.1) registers a single RuntimeClass, `kata`, and the guest is a
+QEMU/KVM VM; there is no Firecracker option in the product to select.
+
+So the hypervisor choice lessons 4 and 8 demonstrate **does not exist in chapter
+4** — not because the chapter skips it, but because the platform does not offer
+it. That is the same principle as the gVisor note below: chapter 4 teaches what
+OpenShift actually ships.
 
 ### Why gVisor is absent from the OpenShift chapter
 
@@ -386,7 +442,8 @@ Every number on this page was measured by a lesson in this repo and read out of
 its `report.json` — none is hand-entered.
 
 - `syllabus.md` — the source of truth for the lesson list and the scoreboard
-- `tutorial/lesson-04-container-kata/README.md` — the Firecracker scoping note
+- `tutorial/lesson-04-container-kata/README.md` — the QEMU-vs-Firecracker
+  measurements, and the shim/config mechanism that selects one
 - `tutorial/lesson-05-container-openshell/README.md` — the five policy probes
 - `ATTACKS.md` — what each of the nine attacks actually does
 - `infra/report/overall.py` — builds the cross-lesson matrix from those files

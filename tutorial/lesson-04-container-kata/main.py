@@ -22,6 +22,12 @@ it is not proof in general — on RHEL-family hosts the guest kernel is built fr
 the strings match. The load-bearing check is **DMI**: a virtual machine reports its hypervisor as
 the system vendor, bare metal reports its motherboard manufacturer. This lesson asserts both.
 
+Part 3b then swaps the **hypervisor** underneath that runtime — QEMU for Firecracker — and the
+headline is a negative result: the isolation model does not move. Same KVM, same guest kernel, same
+scorecard, so the score stays 7/13 and every row it adds is INFO. What moves is the machine: no PCI
+bus, a block-device rootfs instead of a shared one, and a host-side process that weighs half as
+much. Which is a *runtime* and which is a *hypervisor* is ``docs/isolation-layers.md``, not here.
+
     # 1. start the box (once):
     cd ../../infra && ./up.sh lesson-04-container-kata     # or press 'u' in the sbx-tui panel
     # 2. then, as often as you like (on your machine this runs the lesson ON the box):
@@ -35,6 +41,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from scorecard import Card, Finding, render_report
@@ -56,7 +63,21 @@ GROUPS = "reach,abuse,kernel,cost"
 METADATA_URL = os.environ.get("PROBE_METADATA_URL", "")
 METADATA_ENV = ["-e", f"PROBE_METADATA_URL={METADATA_URL}"] if METADATA_URL else []
 
+#: The two hypervisors this box has under Kata. Same runtime, same shim binary, same guest kernel —
+#: what differs is the host-side process the guest talks to. Firecracker is NOT another rung on the
+#: ladder: it sits in the slot QEMU sits in, one layer BELOW the runtime. See docs/isolation-layers.md.
 KATA_RUNTIME = "io.containerd.kata.v2"
+KATA_FC_RUNTIME = "io.containerd.kata-fc.v2"
+
+#: Firecracker's device model has virtio-block and no virtio-fs, so its rootfs cannot be shared in
+#: from the host the way QEMU's is — it has to arrive as a block device. `--snapshotter devmapper`
+#: is that requirement, visible at the point of use rather than buried in a config file. Without it
+#: the container dies mounting its own rootfs (ENOENT), which reads like a Kata bug and is storage.
+FC_SNAPSHOTTER = "devmapper"
+
+#: What each hypervisor's host-side process is called in `ps`. `comm` is truncated to 15 characters,
+#: which is why QEMU is matched on a prefix rather than on `qemu-system-x86_64`.
+_VMM_COMM = {KATA_RUNTIME: "qemu-system", KATA_FC_RUNTIME: "firecracker"}
 
 # Identical to lessons 2 and 3, minus podman's spelling. nerdctl takes the same flags, which is
 # lucky rather than guaranteed — the point is that the caps are the same numbers.
@@ -120,13 +141,24 @@ def ensure_image(nerdctl: list[str]) -> None:
     subprocess.run([*nerdctl, "build", "-t", IMAGE, str(build_dir)], check=True, capture_output=True)
 
 
+def runtime_flags(runtime: str | None) -> list[str]:
+    """The flags that select one hypervisor — the whole of Part 3b's mechanism, in one place.
+
+    Firecracker names its **snapshotter** as well as its runtime, and that second flag is not
+    boilerplate: it is the storage requirement of a VMM with no virtio-fs, surfacing on the command
+    line. Nothing else on this box changes snapshotter, so overlayfs stays the default and QEMU
+    stays exactly where the rest of this lesson measured it.
+    """
+    if runtime == KATA_FC_RUNTIME:
+        return ["--snapshotter", FC_SNAPSHOTTER, "--runtime", runtime]
+    return ["--runtime", runtime] if runtime else []
+
+
 def run_suite(nerdctl: list[str], runtime: str | None) -> tuple[Card, int]:
     # No --net flag, deliberately: the default network is what an agent that must reach a model API
     # is given, and it is what both sides of Part 3's comparison get, so a row that moves there
     # moved because of the runtime rather than the network.
-    argv = [*nerdctl, "run", "--rm", "--user", "1000:1000", *HARDENING]
-    if runtime:
-        argv += ["--runtime", runtime]
+    argv = [*nerdctl, "run", "--rm", "--user", "1000:1000", *HARDENING, *runtime_flags(runtime)]
     argv += ["-e", f"PROBE_GROUPS={GROUPS}", "-e", f"PROBE_NODE_KERNEL={platform.release()}", *METADATA_ENV, IMAGE]
     print(f"  $ {' '.join(argv)}\n")
     done = subprocess.run(argv, capture_output=True, text=True, timeout=900)
@@ -153,12 +185,15 @@ def merge_sandbox_death(card: Card, rc: int, runtime: str) -> Card:
     )
 
 
-def guest_exec(nerdctl: list[str], script: str) -> str:
+def guest_exec(nerdctl: list[str], script: str, runtime: str = KATA_RUNTIME) -> str:
     """Run one shell snippet inside a Kata guest, under the SAME hardening the measured run used.
 
     Repeating the hardening flags is not belt-and-braces: an evidence container that is *less*
     confined than the measured one is not evidence about the measured one — it would, for instance,
     report a writable rootfs for a run that had a read-only one.
+
+    ``runtime`` defaults to QEMU because every reading in Parts 1-3 is about the guest this lesson
+    measured. Part 3b passes the Firecracker runtime to ask the same questions of the other one.
     """
     done = subprocess.run(
         [
@@ -168,8 +203,7 @@ def guest_exec(nerdctl: list[str], script: str) -> str:
             "--user",
             "1000:1000",
             *HARDENING,
-            "--runtime",
-            KATA_RUNTIME,
+            *runtime_flags(runtime),
             "--entrypoint",
             "sh",
             IMAGE,
@@ -202,6 +236,99 @@ def vm_evidence(nerdctl: list[str]) -> dict[str, str]:
         "guest CPUs": guest_exec(nerdctl, "nproc"),
         "guest MemTotal": guest_exec(nerdctl, "awk '/MemTotal/{print int($2/1024)\"MB\"}' /proc/meminfo"),
         "guest CapEff": guest_exec(nerdctl, "awk '/CapEff/{print $2}' /proc/self/status"),
+    }
+
+
+#: Four readings, one guest start. Every start here boots a VM and costs seconds, and they have to
+#: describe the SAME guest anyway to be about one sandbox.
+#:
+#: The PCI count is the load-bearing one, because the kernel string cannot tell the two hypervisors
+#: apart — both boot the identical guest kernel, which is this comparison's finding rather than a
+#: weakness of the probe. Firecracker boots with `pci=off` and puts virtio on MMIO; QEMU emulates a
+#: PCI host bridge and hangs virtio off that. The `virtio0` symlink says which, in one string.
+_HYPERVISOR_PROBE = (
+    'echo "$(uname -r) '
+    "$(ls /sys/bus/pci/devices 2>/dev/null | wc -l) "
+    "$(readlink /sys/bus/virtio/devices/virtio0 | sed 's|.*/devices/||; s|/virtio0$||') "
+    "$(grep ' / ' /proc/mounts | head -1 | cut -d' ' -f3)\""
+)
+
+
+def hypervisor_facts(nerdctl: list[str], runtime: str) -> dict[str, str]:
+    """What machine is under this guest? Asked of the guest, never inferred from the runtime name.
+
+    That is not a style point here. The first draft of this lesson's substrate registered the
+    Firecracker runtime with a plain shim symlink; every container it started reported a perfectly
+    convincing guest kernel, and every one of them was QEMU. The runtime name proved nothing, and
+    only the PCI bus caught it.
+    """
+    fields = guest_exec(nerdctl, _HYPERVISOR_PROBE, runtime).split()
+    keys = ("kernel", "pci_devices", "virtio_transport", "rootfs")
+    return dict(zip(keys, fields + ["?"] * (len(keys) - len(fields)), strict=True))
+
+
+def startup_seconds(nerdctl: list[str], runtime: str | None, reps: int = 3) -> float:
+    """Wall clock for a do-nothing container, min of ``reps``.
+
+    Min rather than mean, for the reason lesson 8's ``time_pod_startup`` gives: one sample on a
+    shared machine measures the box's mood as much as the runtime, and the minimum is the closest
+    thing to "what this costs when nothing else is in the way".
+
+    This is the shortest path either hypervisor has — `nerdctl run` and nothing else. Lesson 8 times
+    the same thing through a scheduler and a kubelet, where the prior art found the VM boot got
+    swamped; if a boot advantage is visible anywhere, it is visible here.
+    """
+    best = float("inf")
+    for _ in range(reps):
+        started = time.monotonic()
+        argv = [*nerdctl, "run", "--rm", "--net", "none", *runtime_flags(runtime)]
+        subprocess.run([*argv, "--entrypoint", "sh", IMAGE, "-c", "true"], capture_output=True, timeout=300)
+        best = min(best, time.monotonic() - started)
+    return round(best, 2)
+
+
+def _max_rss_mb(comm_prefix: str) -> float:
+    """The largest RSS among host processes whose `comm` starts with ``comm_prefix``, in MB."""
+    out = subprocess.run(["ps", "-eo", "comm=,rss="], capture_output=True, text=True, timeout=60).stdout
+    sizes = [int(parts[-1]) for ln in out.splitlines() if (parts := ln.split()) and parts[0].startswith(comm_prefix)]
+    return round(max(sizes) / 1024, 1) if sizes else 0.0
+
+
+def vmm_rss_mb(nerdctl: list[str], runtime: str) -> float:
+    """How heavy the VMM process is on the HOST while one sandbox of it is up.
+
+    This is the only probe in the lesson that looks outward instead of inward, and it has to be:
+    the guests are the same size by construction — same kernel, same rootfs, same `default_memory` —
+    so nothing read from inside can show the difference between the two hypervisors. The weight is
+    entirely in the host-side process, which is exactly where Firecracker's design lives.
+    """
+    name = f"vmm-weigh-{runtime.rsplit('.', 2)[1]}"
+    subprocess.run([*nerdctl, "rm", "-f", name], capture_output=True, timeout=120)
+    argv = [*nerdctl, "run", "-d", "--name", name, "--net", "none", *runtime_flags(runtime)]
+    subprocess.run([*argv, "--entrypoint", "sh", IMAGE, "-c", "sleep 120"], capture_output=True, timeout=300)
+    try:
+        # The VMM allocates as the guest boots, so weighing it the instant `run -d` returns measures
+        # a machine still coming up rather than a running one.
+        time.sleep(6)
+        return _max_rss_mb(_VMM_COMM[runtime])
+    finally:
+        subprocess.run([*nerdctl, "rm", "-f", name], capture_output=True, timeout=120)
+
+
+def vmm_on_disk() -> dict[str, float]:
+    """What each VMM weighs on disk, in MB — the cheapest, most vivid version of the same claim.
+
+    kata-static ships both side by side, so this is a measurement rather than a quotation. QEMU's
+    figure is its binary *plus* the firmware it loads: BIOS images, EDK2 builds and device ROMs are
+    what a full device model needs and what Firecracker's five emulated devices do not have.
+    """
+    kata = Path("/opt/kata")
+    qemu = next(iter(sorted((kata / "bin").glob("qemu-system-*"))), None)
+    firmware = sum(f.stat().st_size for f in (kata / "share" / "kata-qemu").rglob("*") if f.is_file())
+    return {
+        "firecracker": round((kata / "bin" / "firecracker").stat().st_size / 1e6, 1),
+        "qemu": round(qemu.stat().st_size / 1e6, 1) if qemu else 0.0,
+        "qemu_firmware": round(firmware / 1e6, 1),
     }
 
 
@@ -304,6 +431,131 @@ def report_limit_semantics(card: Card, evidence: dict[str, str]) -> None:
     print("    the ceiling the flag names. To cap a Kata workload you configure the sandbox, not just")
     print("    the container — and OOM is then handled by the GUEST kernel before the node ever sees")
     print("    it, which is also why an OOM here looks different in the node's logs.")
+
+
+def report_matrix_tie(kata: Card, fc: Card) -> int:
+    """Does swapping the hypervisor move any row? Measured rather than asserted, and it must be.
+
+    "Both hypervisors have the same security properties" is the kind of claim this repo does not
+    let a lesson make for free — so the whole suite runs again under Firecracker and the two cards
+    are diffed. The expected answer is **nothing moved**, and a boundary that is expected to change
+    nothing is exactly the case where an unmeasured assertion would never be caught being wrong.
+
+    Returns the number of rows that moved, so the caller can report a surprise instead of hiding it.
+    """
+    scored = [f["name"] for f in kata.findings if kata.contained(f["name"]) is not None]
+    moved = [n for n in scored if kata.contained(n) != fc.contained(n)]
+    print(fc.diff_against(kata, "kata-qemu", "kata-fc"))
+    kata_score, applicable = kata.tally()
+    fc_score, _ = fc.tally()
+    print(f"\n    kata-qemu {kata_score}/{applicable}    kata-fc {fc_score}/{applicable}")
+    if moved:
+        print(f"\n    {len(moved)} row(s) MOVED: {', '.join(moved)}")
+        print("    That is a surprise worth chasing, not a result to average away — the two")
+        print("    hypervisors boot the same guest kernel, so a moved row means something other")
+        print("    than the boundary changed between the runs.")
+    else:
+        print("\n    NOTHING moved. Every row identical, and that is the finding: the VMM is not")
+        print("    the boundary. Both hypervisors sit on KVM and hand the workload the same guest")
+        print("    kernel, so the thing that decides what an attack can reach is unchanged by the")
+        print("    choice. Which is why this Part is scored INFO and the lesson still reads 7/13.")
+    return len(moved)
+
+
+def report_hypervisors(nerdctl: list[str], node_kernel: str, kata: Card) -> tuple[dict[str, object], dict[str, str]]:
+    """Part 3b — the same runtime, a different machine underneath it.
+
+    Kata is the *runtime*. The hypervisor is a component one layer BELOW it, and this box has two
+    installed, so the choice is a real one rather than a description. What the reader should take
+    away is the negative result first: **swapping the VMM does not change the isolation model.**
+    Both sit on KVM, both boot the same guest kernel, and the scorecard would be identical row for
+    row — which is why nothing here is scored and every number below is INFO.
+
+    What does change is the host-side process the guest talks to, and that is measured on three
+    axes: what the machine can do, how fast it starts, what it weighs.
+
+    Returns ``(card fields, the Firecracker readings)`` — the second is merged into ``vm_evidence``
+    at save time so the HTML report shows the guest this Part measured beside the one Part 2 did.
+    """
+    qemu = hypervisor_facts(nerdctl, KATA_RUNTIME)
+    fc = hypervisor_facts(nerdctl, KATA_FC_RUNTIME)
+
+    print("  Kata ships one shim binary and picks the machine from a config file. On the command")
+    print("  line that is one flag — and, for Firecracker, a second one that is not decoration:\n")
+    print(f"    --runtime {KATA_RUNTIME}")
+    print(f"    --runtime {KATA_FC_RUNTIME} --snapshotter {FC_SNAPSHOTTER}\n")
+
+    print("  CAPABILITIES — asked of each guest, never inferred from the flag\n")
+    print(f"    {'reading':<22} {'kata-qemu':<26} {'kata-fc':<26}")
+    print("    " + "-" * 74)
+    for key, label in (
+        ("kernel", "guest kernel"),
+        ("pci_devices", "/sys/bus/pci/devices"),
+        ("virtio_transport", "virtio sits on"),
+        ("rootfs", "rootfs filesystem"),
+    ):
+        print(f"    {label:<22} {qemu[key]:<26} {fc[key]:<26}")
+
+    # The lesson refuses to describe a machine it did not run. A guest with a PCI bus is QEMU, no
+    # matter which runtime name started it — and that failure mode is real: it is what a plain
+    # `containerd-shim-kata-fc-v2` symlink produces, silently, exiting 0 the whole way.
+    if fc["kernel"] == node_kernel:
+        sys.exit("  Firecracker assertion FAILED — the guest reports the node kernel. No VM was created.")
+    if fc["pci_devices"] != "0":
+        sys.exit(
+            f"  Firecracker assertion FAILED — the guest has {fc['pci_devices']} PCI devices.\n"
+            "  Firecracker has no PCI bus at all, so this is QEMU wearing the kata-fc runtime name."
+        )
+
+    print()
+    print("    Same kernel, both times — that is the finding, not a gap in the probe. The rows that")
+    print("    move are the MACHINE: Firecracker boots `pci=off` and puts virtio on MMIO, where QEMU")
+    print("    emulates a PCI host bridge. And the rootfs row is the `--snapshotter` flag seen from")
+    print("    the inside: with no virtio-fs to share a directory in, Firecracker takes its rootfs as")
+    print("    a block device. Same isolation model, a smaller machine implementing it.")
+
+    print("\n  THE SECURITY MATRIX — the same suite again, on the other hypervisor\n")
+    fc_card, fc_rc = run_suite(nerdctl, KATA_FC_RUNTIME)
+    fc_card = merge_sandbox_death(fc_card, fc_rc, "kata-fc")
+    moved = report_matrix_tie(kata, fc_card)
+
+    print("\n  SPEED — a do-nothing container, min of 3, `nerdctl run` and nothing else\n")
+    startup = {
+        "runc": startup_seconds(nerdctl, None),
+        "kata-qemu": startup_seconds(nerdctl, KATA_RUNTIME),
+        "kata-fc": startup_seconds(nerdctl, KATA_FC_RUNTIME),
+    }
+    for label, secs in startup.items():
+        against = f"   ({secs / startup['kata-qemu']:.2f}x of kata-qemu)" if label == "kata-fc" else ""
+        print(f"    {label:<12} {secs:>6.2f}s{against}")
+
+    print("\n  WEIGHT — the host-side process, while one sandbox of each is up\n")
+    rss = {"qemu": vmm_rss_mb(nerdctl, KATA_RUNTIME), "fc": vmm_rss_mb(nerdctl, KATA_FC_RUNTIME)}
+    disk = vmm_on_disk()
+    print(f"    {'':<12} {'RSS while running':>18} {'binary on disk':>16} {'+ firmware':>12}")
+    print("    " + "-" * 60)
+    print(f"    {'qemu':<12} {rss['qemu']:>15.1f} MB {disk['qemu']:>13.1f} MB {disk['qemu_firmware']:>9.1f} MB")
+    print(f"    {'firecracker':<12} {rss['fc']:>15.1f} MB {disk['firecracker']:>13.1f} MB {'-':>12}")
+
+    print()
+    print("    The guests weigh the same by construction — same kernel, same rootfs, same")
+    print("    default_memory — so this difference is entirely the VMM process, which is exactly")
+    print("    where Firecracker's design lives: five emulated devices (virtio-net, virtio-block,")
+    print("    virtio-vsock, serial, a minimal keyboard controller), no BIOS, no PCI, no ACPI.")
+    print("    QEMU's firmware column is the other half of the same story — BIOS images, EDK2 builds")
+    print("    and device ROMs are what a full device model needs and Firecracker never loads.")
+
+    card_fields: dict[str, object] = {
+        "startup_s_runc": startup["runc"],
+        "startup_s_kata_qemu": startup["kata-qemu"],
+        "startup_s_kata_fc": startup["kata-fc"],
+        "vmm_rss_mb_qemu": rss["qemu"],
+        "vmm_rss_mb_fc": rss["fc"],
+        "vmm_disk_mb": disk,
+        "hypervisor_facts": {"kata-qemu": qemu, "kata-fc": fc},
+        "hypervisor_rows_moved": moved,
+    }
+    return card_fields, {f"kata-fc {k}": v for k, v in fc.items()}
 
 
 def box_ip_if_any() -> str | None:
@@ -411,6 +663,9 @@ def main() -> None:
     print("  the same ordinary network, so the network rows sit identical on each and drop out of")
     print("  the diff — which is the finding rather than a gap.")
 
+    banner("Part 3b — The same runtime, a DIFFERENT machine underneath (QEMU vs Firecracker)")
+    hypervisors, fc_evidence = report_hypervisors(nerdctl, node_kernel, kata)
+
     banner("Part 4 — What is still open")
     for f in kata.reached():
         print(f"    {f['name']:<20} {f['value']}")
@@ -426,8 +681,10 @@ def main() -> None:
     print("\n  The difference that only matters in lesson 14: this is a REAL kernel, so it ships")
     print("  Landlock. gVisor's user-space kernel answers ENOSYS to it — and a policy engine layered")
     print("  on top then silently stops enforcing filesystem rules while still looking healthy.")
-    print("\n  Firecracker, for the record, is a VMM one layer BELOW an OCI runtime — never a")
-    print("  --runtime value. It is reachable only as `hypervisor = firecracker` under Kata.")
+    print("\n  And note which of those rows Part 3b did NOT move. Firecracker is a different machine")
+    print("  under the same runtime, not a different rung: it changes what the VM is made of, not")
+    print("  what the boundary is worth. The four rows above stay open under both, for the reason")
+    print("  they stay open under gVisor — a hypervisor does not read HTTP either.")
 
     kata.save(
         RESULTS,
@@ -436,9 +693,13 @@ def main() -> None:
         engine="nerdctl/containerd",
         boundary="hardened container + Kata Containers (per-container VM), ordinary network",
         node_kernel=node_kernel,
-        vm_evidence=evidence,
+        # The Firecracker readings ride along in vm_evidence because that is the dict the HTML report
+        # expands into its meta block — so the second hypervisor shows up in report.html without
+        # infra/report/ needing to know this lesson grew a Part 3b.
+        vm_evidence={**evidence, **fc_evidence},
         guest_sysctls=sysctls,
         runtime_exit_code=kata_rc,
+        **hypervisors,
     )
     print(f"\n  scorecard written to {RESULTS.relative_to(REPO_ROOT)}")
     report = Path(__file__).parent / "report.html"

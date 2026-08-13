@@ -36,8 +36,10 @@ either way; what nesting costs is a little speed, not isolation.
 
 **It also needs disk.** The Kata stack — `nerdctl-full` plus `kata-static` —
 measures 9.3 GB, and a Scaleway VM's default root volume is 8 GB usable, so the
-install dies mid-`tar` with `No space left on device`. `terraform/lessons.json`
-gives this lesson 40 GB for that reason.
+install dies mid-`tar` with `No space left on device`. `infra/lessons.json` gives
+this lesson **60 GB**: 9.3 GB of Kata, plus room for the 20 GB thin-pool the
+second hypervisor needs (sparse and thin-provisioned, so that is a ceiling rather
+than disk actually spent — see *A second hypervisor* below).
 
 ## Why this lesson uses nerdctl and not podman
 
@@ -157,13 +159,120 @@ kernel, and a good reason to read the startup cost separately. The prior art's
 cluster measurement is the other half: the famous VM boot **did not dominate**,
 because scheduling swamped it.
 
+## A second hypervisor under the same runtime — Part 3b
+
+Kata is the **runtime**. The **hypervisor** is a component one layer *below* it,
+and this box has two installed, so Part 3b is a real choice rather than a
+description. Which kind of thing is which — and why "Kata + gVisor" is a category
+error while "Kata + Firecracker" is not — is
+[`docs/isolation-layers.md`](../../docs/isolation-layers.md); this lesson does not
+repeat it.
+
+**Start with the negative result, because it is the whole point:** swapping the VMM
+does **not** change your isolation model. Both sit on KVM and boot the same guest
+kernel — and rather than assert that, the lesson runs the **whole suite a second
+time** under Firecracker and diffs the two cards:
+
+```text
+attack               kata-qemu     kata-fc       changed?
+---------------------------------------------------------
+read_credentials     BLOCKED       BLOCKED
+exfiltrate           SUCCEEDED     SUCCEEDED
+plant_backdoor       BLOCKED       BLOCKED
+cloud_metadata       SUCCEEDED     SUCCEEDED
+kernel_identity      BLOCKED       BLOCKED
+sys_module_count     BLOCKED       BLOCKED
+kallsyms_readable    BLOCKED       BLOCKED
+bpf                  SUCCEEDED     SUCCEEDED
+io_uring_setup       SUCCEEDED     SUCCEEDED
+perf_event_open      BLOCKED       BLOCKED
+malicious_package    SUCCEEDED     SUCCEEDED
+reverse_shell        SUCCEEDED     SUCCEEDED
+resource_exhaustion  BLOCKED       BLOCKED
+
+kata-qemu 7/13    kata-fc 7/13      <- nothing moved
+```
+
+**Thirteen rows, not one of them different.** The score stays **7/13**, every row
+Part 3b adds is INFO, and none of it is scored. What changes is the host-side
+process the guest talks to.
+
+### Selecting one, and the flag that is not decoration
+
+```bash
+--runtime io.containerd.kata.v2                              # QEMU
+--runtime io.containerd.kata-fc.v2 --snapshotter devmapper   # Firecracker
+```
+
+Firecracker's device model has virtio-block and **no virtio-fs**, so a container
+rootfs cannot be shared in from the host the way QEMU's is — it has to arrive as a
+block device, which is what the devmapper snapshotter produces. Drop the second
+flag and the container dies mounting its own rootfs with `ENOENT`, which reads like
+a Kata bug and is a storage prerequisite. `infra/substrates/chapter-2/35-containerd-devmapper.sh`
+builds the thin-pool.
+
+### What each guest reports about the machine it is on
+
+```text
+reading                kata-qemu                  kata-fc
+--------------------------------------------------------------------------
+guest kernel           6.18.35                    6.18.35
+/sys/bus/pci/devices   11                         0
+virtio sits on         pci0000:00/0000:00:01.0    virtio-mmio-cmdline/virtio-mmio.0
+rootfs filesystem      virtiofs                   ext4
+```
+
+**The kernel row is identical, and that is the finding rather than a gap in the
+probe.** It also means the usual proof does not work here: `uname -r` cannot tell
+these two apart, so *which VMM booted* has to be read from the machine itself. The
+PCI bus answers it — Firecracker boots `pci=off` and has no PCI bus at all, putting
+virtio on MMIO instead.
+
+That matters more than it looks. The first version of this lesson's substrate
+registered the Firecracker runtime as a plain `containerd-shim-kata-fc-v2` symlink;
+every container it started reported a convincing guest kernel, and **every one of
+them was QEMU**. The runtime name proved nothing. Both the lesson and `check.sh`
+now refuse to report unless the guest has no PCI bus.
+
+The `rootfs` row is the `--snapshotter` flag seen from the inside: the storage
+requirement and the in-guest reading are the same fact from two sides.
+
+### Speed and weight — where Firecracker is actually lighter
+
+```text
+a do-nothing container, min of 3:        the VMM process, while a sandbox is up:
+  runc         0.34s                       qemu           262.1 MB RSS
+  kata-qemu    3.18s                       firecracker    148.3 MB RSS
+  kata-fc      2.79s   (0.88x)
+```
+
+```text
+on disk:  firecracker   2.9 MB
+          qemu         73.4 MB  +  320.7 MB of firmware (BIOS, EDK2, device ROMs)
+```
+
+The guests weigh the same **by construction** — same kernel, same rootfs, same
+`default_memory` — so nothing read from inside a guest could show this. The
+difference is entirely the host-side process, which is exactly where Firecracker's
+design lives: five emulated devices (virtio-net, virtio-block, virtio-vsock,
+serial, a minimal keyboard controller), no BIOS, no PCI, no ACPI.
+
+**The boot advantage is real but modest — 0.88×, not a different order of
+magnitude.** This is the shortest path either hypervisor has: `nerdctl run` with no
+scheduler and no kubelet in the way, which is where a boot advantage should show
+most clearly. It buys about 0.4 s. The **memory** difference is the one worth
+planning around — a bit under half the VMM, on every sandbox you run at once.
+[Lesson 8](../lesson-08-k8s-kata/) times the same thing through Kubernetes, where
+the prior art found the VM boot got swamped entirely, and prints whatever it gets.
+
 ## Scoped out, named on purpose
 
-- **Firecracker** is a **VMM**, one layer *below* an OCI runtime — never a
-  `--runtime` value. It is reachable only as `hypervisor = firecracker` under Kata,
-  which additionally wants the devmapper snapshotter.
 - **Confidential Containers** and **peer pods** are the attestation and cloud
   extensions of this path; lesson 12 names them.
+- **Cloud Hypervisor** (`kata-clh`) is the third VMM in that slot. kata-static
+  ships it and this lesson does not measure it: two hypervisors already make the
+  point that the slot exists, and a third would be a longer table saying the same
+  thing.
 
 ## Next
 

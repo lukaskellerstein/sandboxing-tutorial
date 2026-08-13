@@ -39,6 +39,19 @@ podman build -q -t "${TAG}" "${HERE}"
 rm -f "${ARCHIVE}"
 podman save --format docker-archive -o "${ARCHIVE}" "${TAG}"
 
+# ONE import, for the default snapshotter, even on the node that also runs devmapper.
+#
+# That is worth a note because the obvious worry is wrong. An import unpacks layers for one
+# snapshotter, and chapter 3's node has two — overlayfs for every ordinary pod, devmapper for
+# `kata-fc` (see substrates/chapter-3/75-k8s-devmapper.sh). It looks like this image would be
+# missing from the second one, and a second `import --snapshotter devmapper` looks like the fix.
+# It is not needed and it does not work: **containerd unpacks into a runtime's snapshotter on
+# demand, when the container is created.** Measured 2026-08-13 — a `kata-fc` pod ran from an image
+# imported here and nowhere else, and reported its Firecracker guest normally.
+#
+# (The second import also cannot be spelled on this containerd: naming a snapshotter routes the
+# import through the transfer service, which then refuses with `unable to initialize unpacker: no
+# unpack platforms defined`, and this `ctr images import` has no `--platform` flag to satisfy it.)
 echo "=== importing into k3s containerd"
 k3s ctr images import "${ARCHIVE}"
 rm -f "${ARCHIVE}"

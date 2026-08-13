@@ -48,9 +48,9 @@ for a reason nothing in the DaemonSet's logs mentions.
 
 ## Read the RuntimeClass name; never guess it
 
-kata-deploy registers **one class per enabled shim** — `kata-qemu`, `kata-clh`,
-`kata-qemu-runtime-rs` and others — and which appear depends on the release and the
-node. The lesson asks the cluster:
+kata-deploy registers **one class per enabled shim** — 35 of them here (`kata-qemu`,
+`kata-clh`, `kata-fc`, `kata-qemu-runtime-rs`, the coco/snp/tdx/nvidia variants…) — and
+which appear depends on the release and the node. The lesson asks the cluster:
 
 ```bash
 kubectl get runtimeclass
@@ -167,8 +167,9 @@ is noise.
 
 ```text
 a do-nothing pod, min of 3, apply -> terminal phase:
-  runc :   2.09s
-  kata :   5.77s   (2.76x)
+  runc      :   2.80s
+  kata-qemu :   6.73s   (2.40x of runc)
+  kata-fc   :   6.80s   (2.43x of runc)
 ```
 
 Real, and it is a *pod* figure rather than a hypervisor one — scheduling, image
@@ -191,6 +192,98 @@ before the node's cgroup ever sees pressure. Same cap, smaller blast radius.
 > in. The differing kernel is the proof, and it is decisive on its own; DMI is only
 > needed on hosts where the guest kernel legitimately *matches* the node's, which is
 > the OpenShift case chapter 4 hit.
+
+## Part 3b — the same field, a different machine underneath
+
+Change the field again, from `kata-qemu` to `kata-fc`, and the **hypervisor** under the
+runtime changes from QEMU to Firecracker. That is the layer below the one this chapter
+usually talks about — [`docs/isolation-layers.md`](../../docs/isolation-layers.md) has the
+picture, and this lesson does not repeat it.
+
+**Lesson 4 taught the mechanism on a host; this rung teaches the selection.** There it
+took a shim config file, a devmapper thin-pool and `--snapshotter devmapper` on the
+command line. Here all of it is one word:
+
+```yaml
+spec:
+  runtimeClassName: kata-fc     # instead of kata-qemu
+```
+
+### Registered is not working — the trap worth carrying away
+
+`kata-fc` has been in `kubectl get runtimeclass` **since the day kata-deploy was
+installed**, one of 35 classes. Naming it got you a pod that never started:
+
+```text
+failed to create containerd container: error unpacking image:
+unable to initialize unpacker: snapshotter must be provided to unpack
+```
+
+Firecracker has no virtio-fs, so its rootfs must be a **block device**, and nothing on
+the node provided one. `infra/substrates/chapter-3/75-k8s-devmapper.sh` adds the
+devmapper snapshotter — and it must run *before* kata-deploy, because loading a
+snapshotter needs containerd restarted and a restart after kata-deploy reverts it.
+
+That gap is this repo's characteristic failure wearing a RuntimeClass: **the object
+exists, the API accepts the pod, and the boundary is not there.** It is exactly why the
+lesson runs a workload under the class instead of trusting the listing.
+
+### The security matrix does not move
+
+```text
+kata-qemu 14/19    kata-fc 14/19      <- 19 rows, not one different
+```
+
+Both hypervisors sit on KVM and hand the workload the **same guest kernel**, so what an
+attack can reach is unchanged. This is measured, not asserted — the whole suite runs a
+second time under Firecracker and the two cards are diffed. Swapping the VMM is not a
+boundary change.
+
+### What does move, read from inside each guest
+
+```text
+reading                  kata-qemu                  kata-fc
+----------------------------------------------------------------------------
+guest kernel             6.18.35                    6.18.35
+/sys/bus/pci/devices     11                         0
+virtio sits on           pci0000:00/0000:00:01.0    virtio-mmio-cmdline/virtio-mmio.0
+rootfs filesystem        virtiofs                   ext4
+hotpluggable mem blocks  17                         17
+```
+
+The kernel row is identical, so `uname -r` — the proof this chapter has leaned on since
+lesson 6 — **cannot tell these two apart**. The PCI bus can: Firecracker boots `pci=off`
+and has none. The `rootfs` row is the devmapper requirement seen from the inside.
+
+The hotplug row is worth keeping precisely because it came back **equal**: the guests are
+the same by construction, and the differences are in the machine around them, not in what
+the workload is handed.
+
+### Speed and weight
+
+```text
+startup, min of 3          the VMM process on the node
+  runc        2.80s          kata-qemu    269.7 MB RSS
+  kata-qemu   6.73s          kata-fc      161.5 MB RSS
+  kata-fc     6.80s
+```
+
+**The boot advantage did NOT survive the kubelet, and that is the honest result.** In
+lesson 4, through `nerdctl run`, Firecracker started ~0.4 s ahead of QEMU every time.
+Here it lands on top of it. Two runs on this same cluster measured `kata-fc` at **5.75 s
+and 6.80 s** while `kata-qemu` sat at **6.66 s and 6.73 s** — the QEMU figure is steady
+and the Firecracker one swings by a second, which means the difference is **inside the
+run-to-run noise** of a pod round trip.
+
+That is the prior art's finding reproduced rather than a disappointment: `time_pod_startup`
+measures `apply` → terminal phase on purpose, so scheduling, image handling and the
+kubelet's own loop are all in the figure, and together they swamp a VM boot. If you want
+to see the hypervisor's own start cost, lesson 4 is where it is visible.
+
+**The memory difference does survive, and it is the one to plan around:** ~108 MB per
+sandbox, on every pod running at once. It reproduced within 2 MB across both runs, and it
+is invisible from inside the guest — which is why `vmm_footprint()` is the only probe in
+this chapter that looks out of the sandbox rather than into it.
 
 ## What is still open
 

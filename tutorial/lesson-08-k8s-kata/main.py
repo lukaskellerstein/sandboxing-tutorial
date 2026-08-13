@@ -23,6 +23,14 @@ Two readings deserve attention before you see them:
 * The famous per-pod VM boot tax is **printed rather than asserted**. The prior art measured that
   scheduling swamped it; a lesson that claims a tax without showing the number teaches folklore.
 
+Part 3b then changes the same field again — ``kata-fc`` instead of ``kata-qemu`` — and swaps the
+**hypervisor** under the runtime. Lesson 4 taught that mechanism on a host, where it took a shim
+config and a block-device snapshotter; here the whole of it is one word in a pod spec. Two things
+are worth arriving with: the security matrix comes back **identical**, because a VMM is not a
+boundary; and ``kata-fc`` has been in ``kubectl get runtimeclass`` since kata-deploy was installed
+while never working, because Firecracker needs storage nobody had configured. Registered is not
+working.
+
     # 1. start the box (once):
     cd ../../infra && ./up.sh lesson-08-k8s-kata     # or press 'u' in the sbx-tui panel
     # 2. then, as often as you like (on your machine this runs the lesson ON the box):
@@ -77,22 +85,31 @@ def banner(text: str) -> None:
     print("=" * 74)
 
 
-def pick_runtime_class() -> str:
-    """Ask the cluster which Kata class it has. Never hardcode it — the syllabus's warning is real.
+def pick_runtime_classes() -> tuple[str, str]:
+    """Ask the cluster which Kata classes it has. Never hardcode one — the syllabus's warning is real.
 
-    kata-deploy registers one RuntimeClass per enabled shim (`kata-qemu`, `kata-clh`,
+    kata-deploy registers one RuntimeClass per enabled shim (`kata-qemu`, `kata-clh`, `kata-fc`,
     `kata-qemu-runtime-rs`, ...) and which ones appear depends on the release and the node. A
     hardcoded guess fails as "RuntimeClass not found", which reads like a broken install rather than
     a stale assumption — and sends you debugging the substrate instead of the name.
+
+    Returns ``(qemu class, firecracker class)``. Both are read, and **being in the list is not the
+    same as working**: `kata-fc` is registered on every cluster kata-deploy has touched, and until
+    substrate 75 put a devmapper snapshotter on this node, naming it got you a pod that never
+    started. That gap is this repo's characteristic failure wearing a RuntimeClass, which is why
+    Part 3b runs a workload under it rather than trusting the listing.
     """
     classes = k8s.runtime_classes()
-    print(f"  RuntimeClasses on this cluster: {classes or '(none)'}")
+    print(f"  RuntimeClasses on this cluster: {len(classes)}")
+    print(f"    {' '.join(classes) or '(none)'}")
     kata = [c for c in classes if c.startswith("kata")]
     if not kata:
         sys.exit("  no kata* RuntimeClass exists — substrate 80-k8s-kata.sh did not register one.")
     chosen = "kata-qemu" if "kata-qemu" in kata else kata[0]
-    print(f"  using: {chosen}")
-    return chosen
+    if "kata-fc" not in kata:
+        sys.exit("  no kata-fc RuntimeClass — substrate 80-k8s-kata.sh registered no Firecracker shim.")
+    print(f"  using: {chosen} for the measured rung, kata-fc for Part 3b's comparison")
+    return chosen, "kata-fc"
 
 
 def probe_env(gateway_ip: str) -> dict[str, str]:
@@ -107,7 +124,7 @@ def probe_env(gateway_ip: str) -> dict[str, str]:
     return env
 
 
-def agent_pod(gateway_ip: str, runtime_class: str | None) -> dict[str, object]:
+def agent_pod(gateway_ip: str, runtime_class: str | None, name: str | None = None) -> dict[str, object]:
     """The pod. ``runtime_class=None`` is lesson 6's rung — the same object minus one field."""
     env = probe_env(gateway_ip)
     spec: dict[str, object] = {
@@ -133,7 +150,10 @@ def agent_pod(gateway_ip: str, runtime_class: str | None) -> dict[str, object]:
     return {
         "apiVersion": "v1",
         "kind": "Pod",
-        "metadata": {"name": "agent-kata" if runtime_class else "agent-runc", "labels": {"app": "agent-sandbox"}},
+        "metadata": {
+            "name": name or ("agent-kata" if runtime_class else "agent-runc"),
+            "labels": {"app": "agent-sandbox"},
+        },
         "spec": spec,
     }
 
@@ -224,6 +244,137 @@ def assert_kata_engaged(card: Card, runtime_class: str, dmi: str) -> None:
         sys.exit(f"  boundary assertion FAILED — no VM under runtimeClassName {runtime_class}; not reporting.")
 
 
+#: Five readings, one pod start. Every start here boots a VM and costs seconds, and they have to
+#: describe the SAME guest anyway to be about one sandbox.
+#:
+#: The PCI count is the load-bearing one, because the kernel string cannot tell the two hypervisors
+#: apart — both boot the identical guest kernel, which is this comparison's finding rather than a
+#: weakness of the probe. Firecracker boots `pci=off` and puts virtio on MMIO; QEMU emulates a PCI
+#: host bridge and hangs virtio off that.
+HYPERVISOR_PROBE = (
+    'echo "$(uname -r) '
+    "$(ls /sys/bus/pci/devices 2>/dev/null | wc -l) "
+    "$(readlink /sys/bus/virtio/devices/virtio0 | sed 's|.*/devices/||; s|/virtio0$||') "
+    "$(grep ' / ' /proc/mounts | head -1 | cut -d' ' -f3) "
+    "$(ls /sys/devices/system/memory 2>/dev/null | grep -c '^memory')\""
+)
+_PROBE_KEYS = ("kernel", "pci_devices", "virtio_transport", "rootfs", "memory_blocks")
+
+#: What each hypervisor's process is called on the node. `ps` truncates `comm` to 15 characters,
+#: which is why QEMU is matched on a prefix rather than on `qemu-system-x86_64`.
+_VMM_COMM = {"qemu": "qemu-system", "fc": "firecracker"}
+
+
+def hypervisor_facts(runtime_class: str, name: str) -> dict[str, str]:
+    """What machine is under this pod? Asked of the guest, never inferred from the class name."""
+    fields = k8s.read_from_pod(NAMESPACE, runtime_class, ["sh", "-c", HYPERVISOR_PROBE], name=name).split()
+    return dict(zip(_PROBE_KEYS, (fields + ["?"] * len(_PROBE_KEYS))[: len(_PROBE_KEYS)], strict=True))
+
+
+def report_hypervisors(card: Card, gateway_ip: str, qemu_class: str, fc_class: str) -> dict[str, object]:
+    """Part 3b — the same field, a different machine underneath it.
+
+    Lesson 4 taught the *mechanism*: a hypervisor is a component below the runtime, selected by the
+    config the shim loads, and Firecracker additionally needs a block-device rootfs. None of that
+    survives into a pod spec. Here the entire choice collapses into the value of one field, chosen
+    from a menu of RuntimeClasses that also holds `gvisor` — which is what this chapter is about.
+
+    The finding is a negative one and it is measured rather than asserted: swapping the VMM moves
+    **no row** of the security matrix. Both sit on KVM and hand the workload the same guest kernel.
+    """
+    print("  The whole of lesson 4's Part 3b — a shim config, a snapshotter, a block device —")
+    print("  arrives here as one word:\n")
+    print(f"      runtimeClassName: {qemu_class}      ->  QEMU")
+    print(f"      runtimeClassName: {fc_class}        ->  Firecracker\n")
+    print("  ...and that is the trap this rung is worth teaching. Both classes have been in")
+    print("  `kubectl get runtimeclass` since kata-deploy was installed. Until this cluster grew a")
+    print("  devmapper snapshotter, a pod naming kata-fc never started: Firecracker has no")
+    print("  virtio-fs, so its rootfs must be a block device. REGISTERED IS NOT WORKING.")
+
+    print("\n  CAPABILITIES — asked of each guest, never inferred from the field\n")
+    qemu = hypervisor_facts(qemu_class, "hv-qemu")
+    fc = hypervisor_facts(fc_class, "hv-fc")
+    print(f"    {'reading':<24} {qemu_class:<26} {fc_class:<26}")
+    print("    " + "-" * 76)
+    for key, label in (
+        ("kernel", "guest kernel"),
+        ("pci_devices", "/sys/bus/pci/devices"),
+        ("virtio_transport", "virtio sits on"),
+        ("rootfs", "rootfs filesystem"),
+        ("memory_blocks", "hotpluggable mem blocks"),
+    ):
+        print(f"    {label:<24} {qemu[key]:<26} {fc[key]:<26}")
+
+    if fc["kernel"] == platform.release():
+        sys.exit(f"  boundary assertion FAILED — the {fc_class} pod reports the NODE kernel; no VM booted.")
+    if fc["pci_devices"] != "0":
+        sys.exit(
+            f"  boundary assertion FAILED — the {fc_class} guest has {fc['pci_devices']} PCI devices.\n"
+            "  Firecracker has no PCI bus at all, so this is QEMU under the kata-fc name."
+        )
+
+    print("\n  THE SECURITY MATRIX — the same suite again, under the other hypervisor\n")
+    fc_phase, fc_logs, fc_reason = k8s.run_pod(agent_pod(gateway_ip, fc_class, name="agent-kata-fc"), NAMESPACE)
+    fc_card = merge_pod_death(Card.parse(fc_logs, allow_partial=True), fc_reason, "kata-fc")
+    print(f"  the {fc_class} pod finished in phase {fc_phase} (terminated: {fc_reason or 'n/a'})\n")
+    scored = [f["name"] for f in card.findings if card.contained(f["name"]) is not None]
+    moved = [n for n in scored if card.contained(n) != fc_card.contained(n)]
+    print(fc_card.diff_against(card, qemu_class, fc_class))
+    qemu_score, applicable = card.tally()
+    fc_score, _ = fc_card.tally()
+    print(f"\n    {qemu_class} {qemu_score}/{applicable}    {fc_class} {fc_score}/{applicable}")
+    if moved:
+        print(f"\n    {len(moved)} row(s) MOVED: {', '.join(moved)} — a surprise worth chasing rather")
+        print("    than averaging away, because the two hypervisors boot the same guest kernel.")
+    else:
+        print("\n    NOTHING moved, and that is the finding. The VMM is not the boundary: both sit on")
+        print("    KVM and give the workload the same guest kernel, so what an attack can reach is")
+        print("    unchanged by the choice. Read the matrix, never the count — and here the matrix")
+        print("    says the interesting differences are somewhere other than security.")
+
+    print("\n  SPEED — a do-nothing pod, min of 3, apply -> terminal phase\n")
+    startup = {
+        "runc": k8s.time_pod_startup(NAMESPACE, None),
+        qemu_class: k8s.time_pod_startup(NAMESPACE, qemu_class),
+        fc_class: k8s.time_pod_startup(NAMESPACE, fc_class),
+    }
+    for label, secs in startup.items():
+        ratio = f"   ({secs / startup['runc']:.2f}x of runc)" if startup["runc"] and label != "runc" else ""
+        print(f"    {label:<12} {secs:>6.2f}s{ratio}")
+    print("\n    Lesson 4 measured the same two hypervisors through `nerdctl run` and Firecracker came")
+    print("    out ahead. Whether that survives to here is the question this row exists to answer:")
+    print("    scheduling, image handling and the kubelet's loop are all in this figure, and the")
+    print("    prior art found they swamped the VM boot entirely. Whatever it says, that is your")
+    print("    number — the point is that it was measured on your cluster rather than quoted.")
+
+    print("\n  WEIGHT — the VMM process on the NODE, while one pod of each is up\n")
+    rss = {
+        qemu_class: k8s.vmm_footprint(NAMESPACE, qemu_class, _VMM_COMM["qemu"]),
+        fc_class: k8s.vmm_footprint(NAMESPACE, fc_class, _VMM_COMM["fc"]),
+    }
+    for label, mb in rss.items():
+        print(f"    {label:<12} {mb:>8.1f} MB RSS")
+    print("\n    The only probe in this chapter that looks OUT of the sandbox rather than into it,")
+    print("    and it has to: the guests are identical by construction — same kernel, same rootfs,")
+    print("    same default_memory — so no reading from inside could tell them apart. The whole")
+    print("    difference is the host-side process, which is where Firecracker's five emulated")
+    print("    devices, no BIOS, no PCI and no ACPI actually show up.")
+
+    return {
+        # `startup_s_kata` keeps the shorter name it has always had rather than growing a `_qemu`
+        # suffix to match its new neighbour: nothing downstream reads these names (Card.save passes
+        # them through verbatim and infra/report/ hardcodes none), so renaming it would be churn
+        # with no consumer, and the old cards would stop lining up with the new ones.
+        "startup_s_runc": startup["runc"],
+        "startup_s_kata": startup[qemu_class],
+        "startup_s_kata_fc": startup[fc_class],
+        "vmm_rss_mb_qemu": rss[qemu_class],
+        "vmm_rss_mb_fc": rss[fc_class],
+        "hypervisor_facts": {qemu_class: qemu, fc_class: fc},
+        "hypervisor_rows_moved": len(moved),
+    }
+
+
 def box_ip_if_any() -> str | None:
     """The IP of this lesson's box, from infra's state file — or None if there is no box.
 
@@ -284,7 +435,7 @@ def main() -> None:
         raise SystemExit(run_on_box(ip))
 
     ensure_image()
-    runtime_class = pick_runtime_class()
+    runtime_class, fc_class = pick_runtime_classes()
     k8s.ensure_namespace(NAMESPACE)
     try:
         banner("Part 1 — The simplest thing that works: still one field")
@@ -332,22 +483,17 @@ def main() -> None:
         print("  before the node's cgroup ever sees pressure. Same cap, smaller blast radius.")
         print()
         print(card.cost_delta(prev, "pod (runc)", "pod (kata)"))
+        print("\n  Hold on to that matrix, because Part 3b runs the identical suite again on a")
+        print("  DIFFERENT hypervisor — Firecracker instead of QEMU — and gets the same rows back.")
+        print("  A VMM swap is not a boundary change: what decides these verdicts is the guest")
+        print("  kernel, and both hypervisors hand the workload the same one.")
         print("\n  syscall_ms goes DOWN, which surprises people who expect a VM to cost more. Kata")
         print("  charges no interception toll — the guest kernel answers syscalls directly, and it")
         print("  is a stock kernel without the node's hardening. Compare gVisor's 2.5x in lesson 7:")
         print("  same kernel column closed, opposite cost profile.")
 
-        banner("Part 3b — The per-pod VM boot tax, measured rather than asserted")
-        kata_start = k8s.time_pod_startup(NAMESPACE, runtime_class)
-        runc_start = k8s.time_pod_startup(NAMESPACE, None)
-        ratio = f"{kata_start / runc_start:.2f}x" if runc_start else "n/a"
-        print("  a do-nothing pod, min of 3, apply -> terminal phase:")
-        print(f"    runc : {runc_start:>6.2f}s")
-        print(f"    kata : {kata_start:>6.2f}s   ({ratio})")
-        print("\n  That number is the point of measuring instead of asserting. 'Kata boots a VM per")
-        print("  pod' is true and says nothing about what you WAIT for: scheduling, image handling")
-        print("  and the kubelet's own loop are in this figure too, and the prior art found they")
-        print("  swamped the boot. Whatever it says on your cluster, that is your number.")
+        banner("Part 3b — The same field, a DIFFERENT machine underneath (QEMU vs Firecracker)")
+        hypervisors = report_hypervisors(card, gateway_ip, runtime_class, fc_class)
 
         banner("Part 4 — What is still open (the next lesson's reason to exist)")
         for f in card.reached():
@@ -368,8 +514,7 @@ def main() -> None:
             node_kernel=platform.release(),
             boundary=f"hardened Pod, runtimeClassName: {runtime_class} (per-pod VM), scoped NetworkPolicy",
             guest_dmi=dmi,
-            startup_s_kata=kata_start,
-            startup_s_runc=runc_start,
+            **hypervisors,
         )
         print(f"\n  scorecard written to {RESULTS.relative_to(REPO_ROOT)}")
         if render_report(REPO_ROOT):

@@ -2,9 +2,9 @@
   "lesson": "lesson-09-k8s-openshell",
   "mode": "network-on",
   "boundary": "OpenShell kubernetes driver: per-binary + method-aware egress on runc, OCSF audit",
-  "generated_at": "2026-08-13T12:01:26+02:00",
+  "generated_at": "2026-08-13T19:32:28+02:00",
   "complete": true,
-  "duration_s": 38.9,
+  "duration_s": 36.2,
   "blocked": 17,
   "scored": 19,
   "host": {
@@ -180,7 +180,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 54.6,
+      "value": 55.7,
       "detail": "",
       "verdict": "INFO"
     },
@@ -189,7 +189,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 112.7,
+      "value": 115.3,
       "detail": "",
       "verdict": "INFO"
     },
