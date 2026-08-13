@@ -2,9 +2,9 @@
   "lesson": "lesson-07-k8s-gvisor",
   "mode": "network-on",
   "boundary": "hardened Pod, runtimeClassName: gvisor, scoped NetworkPolicy egress",
-  "generated_at": "2026-08-13T22:22:12+02:00",
+  "generated_at": "2026-08-13T23:54:50+02:00",
   "complete": false,
-  "duration_s": 113.1,
+  "duration_s": 111.8,
   "blocked": 16,
   "scored": 19,
   "host": {
@@ -179,7 +179,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 198.6,
+      "value": 289.6,
       "detail": "",
       "verdict": "INFO"
     },
@@ -188,7 +188,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 137.4,
+      "value": 137.2,
       "detail": "",
       "verdict": "INFO"
     },

@@ -2,9 +2,9 @@
   "lesson": "lesson-02-container",
   "mode": "network-on",
   "boundary": "hardened rootless container, ordinary network",
-  "generated_at": "2026-08-13T22:04:43+02:00",
+  "generated_at": "2026-08-13T23:33:37+02:00",
   "complete": true,
-  "duration_s": 20.4,
+  "duration_s": 18.1,
   "blocked": 7,
   "scored": 13,
   "host": {
@@ -89,7 +89,7 @@
       "attack": "8",
       "why": "Can it enumerate the host's loaded kernel modules?",
       "group": "kernel",
-      "value": 179,
+      "value": 190,
       "detail": "",
       "verdict": "SUCCEEDED"
     },
@@ -134,7 +134,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 51.4,
+      "value": 48.5,
       "detail": "",
       "verdict": "INFO"
     },
@@ -143,7 +143,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 128.3,
+      "value": 117.2,
       "detail": "",
       "verdict": "INFO"
     },

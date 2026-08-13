@@ -31,20 +31,24 @@
     "usable and the Kata stack (nerdctl-full + kata-static) needs 9.3 GB. Metal's large local SSD",
     "hid that, and the failure is a tar dying with 'No space left on device' mid-install.",
     "",
-    "Chapter 3 (lessons 6-9) shares ONE cluster, `chapter-03-k8s`, carrying all four of its",
-    "substrates at once. The four lessons carry `box` instead of hardware, and `box` is the ONLY",
+    "ONE SHARED BOX PER CHAPTER (2026-08-13). Chapter 2 (lessons 2-4) shares `chapter-02-host` and",
+    "chapter 3 (lessons 6-9) shares `chapter-03-k8s`, each carrying every one of its chapter's",
+    "substrates at once. A shared lesson carries `box` instead of hardware, and `box` is the ONLY",
     "indirection in this file: lib.sh's lesson_box() resolves it, everything else keeps reading the",
-    "row it lands on. The point is not money — four small short-lived boxes cost about what one",
-    "bigger one does. It is that chapter 3's claim is `four boundaries, one cluster, one field",
-    "selects between them`, and on a box carrying only gVisor the `runtimeClassName: gvisor` in",
-    "lesson 7 is a choice from a menu of one. On the shared cluster the other three runtimes are",
-    "installed and provably working beside it, so the field is doing what the chapter says it does.",
-    "check.sh proves that at provision time: it dispatches per substrate, so a four-substrate entry",
-    "fires all four boundary assertions against the one node before any lesson runs.",
+    "row it lands on. The point is not money — several small short-lived boxes cost about what one",
+    "bigger one does. It is that each chapter's claim is `one machine, one flag selects between",
+    "boundaries`, and on a box carrying only gVisor the `runtimeClassName: gvisor` in lesson 7 (or",
+    "lesson 3's `--runtime runsc`) is a choice from a menu of one. On the shared box the other",
+    "runtimes are installed and provably working beside it, so the flag is doing what the chapter",
+    "says it does. check.sh proves that at provision time: it dispatches per substrate, so a",
+    "five-substrate entry fires all five boundary assertions against the one machine before any",
+    "lesson runs. The one exception is lesson 5, pinned to its own box by OpenShell's",
+    "private-primary-address requirement — the constraint is spelled out in chapter-02-host's `why`.",
     "",
-    "The honest cost: running ONE chapter-3 lesson now installs all four substrates (~30 min rather",
-    "than ~8), because the menu is the point. infra/chapter-03.sh amortizes it over all",
-    "four and still destroys the box on an EXIT trap, so no teardown becomes a human's to remember.",
+    "The honest cost: running ONE shared lesson now installs its whole chapter's substrates (~30 min",
+    "rather than ~8), because the menu is the point. infra/chapter-02.sh and infra/chapter-03.sh",
+    "amortize it over each chapter and still destroy every box on an EXIT trap, so no teardown",
+    "becomes a human's to remember.",
     "",
     "Chapter 3 runs single-node k3s ON a disposable VM rather than against a",
     "managed cluster (Scaleway Kapsule) or a nested one (minikube, kind). Three reasons, in order of",
@@ -74,31 +78,28 @@
     "why": "The bare box IS the lesson. No engine, no runtime — the rogue agent runs as an ordinary host process, which is only acceptable on a machine that is destroyed minutes later."
   },
 
-  "lesson-02-container": {
+  "chapter-02-host": {
     "kind": "vm",
-    "type": "PLAY2-NANO",
+    "type": "PRO2-XS",
     "image": "ubuntu_noble",
-    "root_volume_gb": 20,
-    "substrates": ["chapter-2/10-podman"],
-    "why": "Rootless podman on the VM's own kernel. The unprivileged `agent` user is created by cloud-init and is load-bearing: rootless is the claim this lesson makes, and a Scaleway VM otherwise logs in as root."
+    "root_volume_gb": 60,
+    "substrates": ["chapter-2/10-podman", "chapter-2/20-runsc", "chapter-2/30-containerd-kata", "chapter-2/35-containerd-devmapper"],
+    "why": "NOT a lesson — the one host lessons 2, 3 and 4 share. It carries the chapter's host-side boundaries side by side — podman with crun as the untouched default (10), runsc as an opt-in podman runtime (20), containerd + kata-static for kata-qemu (30), and the devmapper snapshotter that makes kata-fc real (35) — so each lesson measures its own boundary on a machine where the alternatives are installed and provably working beside it, the same argument chapter-03-k8s makes for the runtimeClassName menu. check.sh fires all four assertions at provision time. ORDER 10 -> 20 -> 30 -> 35: 20's smoke test needs podman installed, and 35 restarts containerd so it must follow 30. Nothing here has chapter 3's revert-on-restart trap — kata-static is files on disk, not a DaemonSet that undoes itself. WHY LESSON 5 IS NOT HERE: OpenShell's rootless-podman driver needs a genuinely private PRIMARY address on the default-route interface, which no Scaleway box has — so its box builds a Debian-13 NAT guest (50-nat-vm) and up.sh re-points the box's .state at that guest, terminally, after which every ssh and rsync for the box lands inside the guest. Host-level lessons cannot ride along on a box that has been relocated like that, so lesson 5 keeps its own; see its `why` and substrates/README.md. PRO2-XS (4 vCPU / 16 GB) because no NAT guest lives here, so the 2 GB Kata guest and the containerd/buildkit stack fit with headroom — a type purchasable since the account's identity verification lifted the quota that had pinned everything above PLAY2-MICRO at 0/0. 60 GB because the Kata stack measured 9.3 GB and 35 adds a 20 GB thin-pool data file plus 2 GB of metadata beside it: SPARSE and thin-provisioned, so a ceiling rather than disk spent, but the volume has to be able to honour it."
+  },
+
+  "lesson-02-container": {
+    "box": "chapter-02-host",
+    "why": "Runs on the shared chapter-2 host. Rootless podman on the host's own kernel — the rung every later boundary is measured against. The unprivileged `agent` user is created by cloud-init and is load-bearing: rootless is the claim this lesson makes, and a Scaleway VM otherwise logs in as root. The default runtime stays crun on a host where runsc and Kata are installed beside it (20-runsc registers gVisor strictly opt-in), so the baseline is a deliberate abstention from the menu rather than the only thing installed."
   },
 
   "lesson-03-container-gvisor": {
-    "kind": "vm",
-    "type": "PLAY2-NANO",
-    "image": "ubuntu_noble",
-    "root_volume_gb": 20,
-    "substrates": ["chapter-2/10-podman", "chapter-2/20-runsc"],
-    "why": "runsc is user-space and needs no hardware feature. Registered as an opt-in podman runtime so the default stays crun and Part 3 can re-run the previous rung on the same box."
+    "box": "chapter-02-host",
+    "why": "Runs on the shared chapter-2 host. `--runtime runsc` chosen from a menu that also holds crun and Kata — the same one-flag selection lesson 7 makes with runtimeClassName, which is only meaningful because the alternatives answer beside it. runsc is user-space and needs no hardware feature; registered as an opt-in podman runtime so the default stays crun and Part 3 can re-run the previous rung on the same box."
   },
 
   "lesson-04-container-kata": {
-    "kind": "vm",
-    "type": "PLAY2-MICRO",
-    "image": "ubuntu_noble",
-    "root_volume_gb": 60,
-    "substrates": ["chapter-2/30-containerd-kata", "chapter-2/35-containerd-devmapper"],
-    "why": "Needs /dev/kvm and /dev/vhost-vsock, which this VM type has. PLAY2-MICRO (8 GB RAM) so the 2 GB guest and the containerd/buildkit stack coexist. 60 GB (up from 40) because the Kata stack measured 9.3 GB and 35-containerd-devmapper adds a 20 GB thin-pool data file plus 2 GB of metadata beside it: the files are SPARSE and thin-provisioned, so that is a ceiling rather than disk actually spent, but the volume has to be able to honour it. The 8 GB default root volume fails mid-tar long before any of that. 35 runs AFTER 30 and gives this box a SECOND hypervisor under Kata (Firecracker), which needs the devmapper snapshotter because Firecracker has virtio-block and no virtio-fs — the container rootfs has to arrive as a block device. Read from inside, that is the whole difference: rootfs=virtiofs under kata-qemu, rootfs=ext4 under kata-fc."
+    "box": "chapter-02-host",
+    "why": "Runs on the shared chapter-2 host, whose /dev/kvm and /dev/vhost-vsock it needs. `--runtime io.containerd.kata.v2` boots a real guest kernel on the same machine where podman's crun and gVisor's runsc are working rungs, and 35 gives the same runtime a SECOND hypervisor (Firecracker), which needs the devmapper snapshotter because Firecracker has virtio-block and no virtio-fs — the container rootfs has to arrive as a block device. Read from inside, that is the whole difference: rootfs=virtiofs under kata-qemu, rootfs=ext4 under kata-fc."
   },
 
   "lesson-05-container-openshell": {
@@ -112,11 +113,11 @@
 
   "chapter-03-k8s": {
     "kind": "vm",
-    "type": "PLAY2-MICRO",
+    "type": "PRO2-S",
     "image": "ubuntu_noble",
     "root_volume_gb": 80,
-    "substrates": ["chapter-3/60-k8s", "chapter-3/70-k8s-gvisor", "chapter-3/75-k8s-devmapper", "chapter-3/80-k8s-kata"],
-    "why": "NOT a lesson — the k3s cluster lessons 6, 7 and 8 share. It carries the four boundaries a workload selects with `runtimeClassName` (none / gvisor / kata-qemu / kata-fc) so that field is a real choice from a menu rather than the only runtime installed: measured 2026-08-13, one node served kernel 6.8.0-106-generic to a plain pod, 4.19.0-gvisor to a gVisor pod and guest 6.18.35 to a Kata pod, and installing Kata did NOT make it the default. 75 adds the devmapper snapshotter, which is what makes `kata-fc` — a class kata-deploy has always registered here and which has never worked — actually run: Firecracker has virtio-block and no virtio-fs, so a container rootfs must arrive as a BLOCK device, and without the snapshotter a kata-fc pod dies at sandbox creation with `snapshotter must be provided to unpack`. It configures no per-runtime snapshotter and must not: kata-deploy already writes `snapshotter = \"devmapper\"` on kata-fc and on nothing else, so kata-qemu stays on overlayfs and the split comes free and correct from upstream. ORDER IS LOAD-BEARING and it is about restarts, not files: 70 and 75 both run `systemctl restart k3s`, and nothing may restart k3s after 80, because a restart terminates the kata-deploy DaemonSet pod and that pod reverts its own install on termination. 75 sits between them for exactly that reason — loading a snapshotter needs containerd restarted, k3s embeds containerd, and there is no post-80 seam to do it in. 80 GB (up from 60) for 75's 25 GB thin-pool data file plus 2 GB of metadata; both are SPARSE and thin-provisioned, so that is a ceiling rather than disk spent. WHY LESSON 9 IS NOT HERE, and it is a capacity limit rather than a design one: with 90-k8s-openshell also installed, the OpenShell gateway and agent-sandbox controller stay RESIDENT from provisioning onward, and lesson 8's Part 3b — which boots Kata guests repeatedly to time the VM tax — took the whole box down (ssh dropped mid-run, lesson 9 could not reach it at all). Lesson 8 had passed that same Part 3b on an 8 GB box carrying 60+80 and no gateway, which is what points at memory. The obvious fix is a bigger box and it is NOT AVAILABLE on this account: POP2-4C-16G, PRO2-XS, BASIC3-X4C-16G and BASIC3-X6C-24G every one report `has reached its quota (0/0)`, PLAY2-MICRO is the largest PLAY2, and this CLI has no `scw account quota` subcommand to check before paying for a failed create. If that quota is ever raised, adding `chapter-3/90-k8s-openshell` back to this list and giving lesson-09 a `box` is a two-line change. 60 GB (up from lesson 8's 40) because Kata's 9.3 GB now shares the disk with gVisor's runsc and the agent image."
+    "substrates": ["chapter-3/60-k8s", "chapter-3/70-k8s-gvisor", "chapter-3/75-k8s-devmapper", "chapter-3/80-k8s-kata", "chapter-3/90-k8s-openshell"],
+    "why": "NOT a lesson — the k3s cluster lessons 6, 7, 8 and 9 all share. It carries the four boundaries a workload selects with `runtimeClassName` (none / gvisor / kata-qemu / kata-fc) so that field is a real choice from a menu rather than the only runtime installed: measured 2026-08-13, one node served kernel 6.8.0-106-generic to a plain pod, 4.19.0-gvisor to a gVisor pod and guest 6.18.35 to a Kata pod, and installing Kata did NOT make it the default. 75 adds the devmapper snapshotter, which is what makes `kata-fc` — a class kata-deploy has always registered here and which has never worked — actually run: Firecracker has virtio-block and no virtio-fs, so a container rootfs must arrive as a BLOCK device, and without the snapshotter a kata-fc pod dies at sandbox creation with `snapshotter must be provided to unpack`. It configures no per-runtime snapshotter and must not: kata-deploy already writes `snapshotter = \"devmapper\"` on kata-fc and on nothing else, so kata-qemu stays on overlayfs and the split comes free and correct from upstream. ORDER IS LOAD-BEARING and it is about restarts, not files: 70 and 75 both run `systemctl restart k3s`, and nothing may restart k3s after 80, because a restart terminates the kata-deploy DaemonSet pod and that pod reverts its own install on termination. 75 sits between them for exactly that reason — loading a snapshotter needs containerd restarted, k3s embeds containerd, and there is no post-80 seam to do it in. 90 runs LAST and must not restart k3s — and it does not: it touches only `systemctl --user` openshell services, so kata-deploy survives it, which check.sh proves by booting a Kata guest after every substrate has run. 80 GB (up from 60) for 75's 25 GB thin-pool data file plus 2 GB of metadata; both are SPARSE and thin-provisioned, so that is a ceiling rather than disk spent — the OpenShell gateway image adds little beside it. LESSON 9 SHARES THIS NODE since 2026-08-13: the account's identity verification lifted the quota that had pinned every type above PLAY2-MICRO at 0/0, which was the only reason it sat on its own box. PRO2-S (8 vCPU / 32 GB) carries the resident OpenShell gateway and agent-sandbox controller beside lesson 8's Part 3b — repeated Kata guest boots — without the OOM that took the 8 GB node down."
   },
 
   "lesson-06-k8s": {
@@ -135,12 +136,8 @@
   },
 
   "lesson-09-k8s-openshell": {
-    "kind": "vm",
-    "type": "PLAY2-MICRO",
-    "image": "ubuntu_noble",
-    "root_volume_gb": 40,
-    "substrates": ["chapter-3/60-k8s", "chapter-3/90-k8s-openshell"],
-    "why": "The ONE chapter-3 lesson that keeps its own box, and the reason is capacity, not principle — see chapter-03-k8s's `why`. The Agent Sandbox controller, the OpenShell gateway StatefulSet and its PVC all land on this node alongside k3s; the prior art measured that path at roughly 4 CPU / 8 GB, so with Kata's repeated guest boots on the same machine the box died. It also loses the least by being separate: OpenShell is the one chapter-3 boundary NOT selected with `runtimeClassName` — its sandbox pods take their runtime class from the GATEWAY, because `openshell sandbox create` has no such flag — so it was never part of the per-pod runtime menu the shared cluster exists to demonstrate. Note what is NOT here: lesson 5's 50-nat-vm. The public-default-route constraint belongs to OpenShell's rootless-podman driver, and the kubernetes driver's sandbox callback is an in-cluster Service on a private ClusterIP."
+    "box": "chapter-03-k8s",
+    "why": "Runs on the shared cluster. OpenShell is the one chapter-3 boundary NOT selected with `runtimeClassName` — its sandbox pods take their runtime class from the GATEWAY, because `openshell sandbox create` has no such flag — but it is installed on the same node, so the audit/policy axis is measured beside the runtime menu it composes with rather than on different hardware. It shares since 2026-08-13: identity verification lifted the quota that had forced it onto its own 8 GB box, and PRO2-S (32 GB) holds its resident gateway and agent-sandbox controller beside lesson 8's repeated Kata boots — see chapter-03-k8s's `why`. Note what is NOT here: lesson 5's 50-nat-vm. The public-default-route constraint belongs to OpenShell's rootless-podman driver, and the kubernetes driver's sandbox callback is an in-cluster Service on a private ClusterIP."
   },
 
   "openshift-sno": {

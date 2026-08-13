@@ -4,14 +4,15 @@
 #   ./run.sh            up -> run -> destroy
 #   ./run.sh --keep     leave the cluster up afterwards (debugging; you pay until ../../../infra/down.sh)
 #
-# Lessons 6, 7 and 8 SHARE one cluster — `chapter-03-k8s`, named by this lesson's `box` field in
+# Lessons 6-9 SHARE one cluster — `chapter-03-k8s`, named by this lesson's `box` field in
 # infra/lessons.json — because the boundary each of them selects is only a real choice when the
 # others are installed beside it. On a box carrying gVisor alone, `runtimeClassName: gvisor` is a
-# menu of one. (Lesson 9 is not on it: OpenShell is not runtime-class-selected, and its resident
-# gateway does not fit beside Kata on 8 GB. lessons.json records that measurement.) Two consequences
-# worth knowing before you run this:
+# menu of one. (Lesson 9's OpenShell is the one boundary not selected that way — its sandboxes take
+# their runtime class from the gateway — but its policy/audit axis is measured on the same node the
+# menu lives on. All four fit since the identity-verified quota bought a 32 GB node; lessons.json
+# records the measurement.) Two consequences worth knowing before you run this:
 #
-#   * `up` installs all THREE of the cluster's substrates, so one lesson on its own costs ~25
+#   * `up` installs all FIVE of the cluster's substrates, so one lesson on its own costs ~30
 #     minutes rather than ~8. To pay that once for the chapter, use ../../../infra/chapter-03.sh.
 #   * teardown destroys the CLUSTER. Running one lesson alone is still self-cleaning, because
 #     nothing else is on it — but working through the chapter, let infra/chapter-03.sh own this.
@@ -44,7 +45,7 @@ teardown() {
 }
 trap teardown EXIT
 
-# up.sh is idempotent: it exits 0 when the box already exists, which is what lets run-all.sh bring
-# the cluster up once and then call each lesson's runner against it.
+# up.sh is idempotent: it exits 0 when the box already exists, which is what lets infra/chapter-03.sh
+# bring the cluster up once and then run every lesson against it.
 "${INFRA}/up.sh" "${BOX}"
 "${INFRA}/run.sh" "${LESSON}"

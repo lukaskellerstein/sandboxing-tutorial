@@ -198,9 +198,10 @@ only place in the tutorial that does.
 
 | Used by | Kind | Offer | Price |
 | :-- | :-- | :-- | --: |
-| Lessons 1–3 — one box per lesson | VM | `PLAY2-NANO` (2 vCPU, 4 GB) | **€0.028/hr** |
-| Lessons 4–5 — one box per lesson | VM | `PLAY2-MICRO` (4 vCPU, 8 GB) | **€0.055/hr** |
-| Chapter 3 — one box for lessons 6–8, one for 9 | VM | `PLAY2-MICRO` (4 vCPU, 8 GB) | **€0.055/hr** |
+| Lesson 1 — its own box (a one-lesson chapter is one box) | VM | `PLAY2-NANO` (2 vCPU, 4 GB) | **€0.028/hr** |
+| Chapter 2 — one box for lessons 2–4 (`chapter-02-host`) | VM | `PRO2-XS` (4 vCPU, 16 GB) | **€0.112/hr** |
+| Lesson 5 — its own box, the documented exception (below) | VM | `PLAY2-MICRO` (4 vCPU, 8 GB) | **€0.055/hr** |
+| Chapter 3 — one box for lessons 6–9 (`chapter-03-k8s`) | VM | `PRO2-S` (8 vCPU, 32 GB) | **€0.223/hr** |
 | Chapter 4 — one box for all four lessons | bare metal | `EM-B112X-SSD` (12c/24t, 192 GB) | **€0.263/hr** |
 
 Chapters 1–3 used to take metal too, on the argument that only metal makes "a
@@ -217,28 +218,39 @@ The one claim metal did buy is now gone and is not worth buying back: on a VM th
 container still gives you the whole machine, which is the claim lessons 1–3 actually
 make.
 
-**Two chapters share a box, for opposite reasons.** Chapter 4 shares because installing
-single-node OpenShift takes far longer than a lesson does; re-installing it four times
-would be absurd, and its teardown is a step a human owns. **Chapter 3 shares for a
-teaching reason, not a cost one** — short-lived small boxes cost about the same either
-way. Its claim is *one cluster, one field selects between boundaries*, and on a box
-carrying gVisor alone lesson 7's `runtimeClassName: gvisor` is a choice from a menu of
-one. On the shared cluster the other runtimes are installed and provably working beside
-it, and `check.sh` asserts each from inside before any lesson runs. Teardown stays
-automatic: `infra/chapter-03.sh` destroys every box it used on an EXIT trap,
-and so does each lesson's own `run.sh`.
+**The topology is one shared box per chapter** (2026-08-13), with one documented
+exception. Chapter 1 conforms trivially — a one-lesson chapter *is* one box. Chapter 4
+shares because installing single-node OpenShift takes far longer than a lesson does;
+re-installing it four times would be absurd, and its teardown is a step a human owns.
+**Chapters 2 and 3 share for a teaching reason, not a cost one** — short-lived small
+boxes cost about the same either way. Each chapter's claim is *one machine, one flag
+selects between boundaries*: on a box carrying gVisor alone, lesson 3's `--runtime runsc`
+and lesson 7's `runtimeClassName: gvisor` are choices from a menu of one. On the shared
+box the other runtimes are installed and provably working beside them, and `check.sh`
+asserts each from inside before any lesson runs. Teardown stays automatic:
+`infra/chapter-02.sh` and `infra/chapter-03.sh` destroy every box they used on an EXIT
+trap, and so does each lesson's own `run.sh`.
 
-**Lessons 6–8 share; lesson 9 does not**, and that split is a measured capacity limit
-rather than a design choice. The shared node carries exactly the boundaries a workload
-selects with `runtimeClassName` — none, `gvisor`, `kata-qemu`. OpenShell is not one of
-them (its sandboxes take their runtime class from the *gateway*, since `openshell sandbox
-create` has no such flag), and it is the heaviest: with its gateway resident, lesson 8's
-Part 3b — which boots Kata guests repeatedly to time the VM tax — took the whole 8 GB box
-down. A bigger box is the obvious fix and **is not available on this account**: see the
-quota note below.
+**Lesson 5 is the exception, pinned to its own box by a hard constraint.** OpenShell's
+rootless-podman driver refuses a public primary address on the default-route interface,
+which every Scaleway box has — so its box builds a NAT'd Debian-13 guest and `up.sh`
+re-points the whole box *inside* that guest, terminally. A box relocated like that cannot
+also host lessons 2–4, which run at host level. The constraint, and the two rejected
+true-one-box alternatives, are recorded in `chapter-02-host`'s `why` in
+`infra/lessons.json` and in `infra/substrates/README.md`.
 
-The bill for sharing is honest and worth stating: running ONE of lessons 6–8 now installs
-three substrates, ~25 minutes rather than ~8. `run-all.sh` pays it once for the chapter.
+**Lesson 9 shares chapter 3's node since 2026-08-13.** It used to keep its own box — with
+the OpenShell gateway resident, lesson 8's Part 3b (repeated Kata guest boots) took an
+8 GB node down, and every bigger VM type was quota 0/0 on this account. The account's
+identity verification lifted that ceiling; on the `PRO2-S` (32 GB) shared node the
+resident gateway and agent-sandbox controller coexist with the same repeated Kata boots.
+OpenShell is still not part of the `runtimeClassName` menu (its sandboxes take their
+class from the *gateway*), but its policy/audit axis is now measured on the same node the
+menu lives on.
+
+The bill for sharing is honest and worth stating: running ONE shared lesson installs its
+whole chapter's substrates, ~30 minutes rather than ~8. `infra/chapter-02.sh` and
+`infra/chapter-03.sh` pay it once per chapter.
 
 Everywhere else, `up.sh <lesson>` gives you a clean machine and `down.sh` destroys it.
 Working through chapters 1–3 costs well under **€1**.
@@ -390,17 +402,21 @@ infra/
 │                               jq and by ctl.py with json. A lesson names EITHER its own hardware
 │                               or, with `box`, the machine it shares.
 ├── substrates/                 all run ON the provisioned box, grouped by the chapter they build
-│   ├── chapter-2/              one host, four boundaries — one box per lesson
+│   ├── chapter-2/              10-35 install onto the ONE host lessons 2-4 share
+│   │   │                       (chapter-02-host); 50+40 build lesson 5's own box
 │   │   ├── 10-podman.sh
-│   │   ├── 20-runsc.sh            gVisor
+│   │   ├── 20-runsc.sh            gVisor, an opt-in podman runtime (default stays crun)
 │   │   ├── 30-containerd-kata.sh  containerd + nerdctl + kata-static
+│   │   ├── 35-containerd-devmapper.sh  the snapshotter that makes kata-fc real
 │   │   ├── 40-openshell.sh        OpenShell (pinned)
 │   │   └── 50-nat-vm.sh           the NAT'd guest lesson 5's gateway requires
-│   └── chapter-3/              ALL FOUR install onto the ONE cluster lessons 6-9 share, in this
-│       │                       order: 70 is the only one that restarts k3s, and a restart after
-│       │                       80 or 90 undoes them.
+│   └── chapter-3/              ALL FIVE install onto the ONE cluster lessons 6-9 share, in
+│       │                       this order: 70 and 75 restart k3s, and a restart after 80
+│       │                       reverts kata-deploy — so nothing may restart it later, and
+│       │                       90 does not (user services only).
 │       ├── 60-k8s.sh              k3s itself
 │       ├── 70-k8s-gvisor.sh       runsc as a containerd runtime + RuntimeClass
+│       ├── 75-k8s-devmapper.sh    devmapper snapshotter, so kata-fc stops being decorative
 │       ├── 80-k8s-kata.sh         kata-deploy (a Helm chart as of Kata 4.0.0)
 │       └── 90-k8s-openshell.sh    agent-sandbox controller + the OpenShell gateway
 ├── openshift-sno/              chapter 4's cluster. NOT a substrate: its install REPLACES the
@@ -786,12 +802,13 @@ the two do not share is the machine, read from inside the guest:
 ### Chapter 3 runs on single-node k3s (2026-08-08) — all four rungs green
 
 > [!important]
-> **The BOXES below are superseded; the SCORES are not.** As of 2026-08-13 lessons 6–8 share one
-> cluster (`chapter-03-k8s`, a `PLAY2-MICRO` carrying `60`/`70`/`80`) and lesson 9 keeps its own.
-> The table below is the four-separate-boxes run, kept because it is what was measured that day —
-> and because its scores are now the **regression baseline**: the shared cluster has to reproduce
-> 14/16/14, and a rung that moves means the sharing changed a boundary and must be explained
-> rather than accepted.
+> **The BOXES below are superseded; the SCORES are not.** As of 2026-08-13 all four chapter-3
+> lessons share one cluster — `chapter-03-k8s`, a `PRO2-S` carrying `60`/`70`/`75`/`80`/`90` —
+> after the account's identity verification lifted the quota that had briefly split lesson 9 onto
+> its own box (the OOM story below). The table below is the four-separate-boxes run, kept because
+> it is what was measured that day — and because its scores are now the **regression baseline**:
+> the shared cluster has to reproduce 14/16/14, and a rung that moves means the sharing changed a
+> boundary and must be explained rather than accepted.
 >
 > **What the shared cluster settled (measured 2026-08-13):** gVisor and Kata *do* coexist on one
 > k3s node. One `kubectl get runtimeclass` showed `gvisor` beside `kata-qemu` and its ~18 variants,
@@ -804,7 +821,9 @@ the two do not share is the machine, read from inside the guest:
 > installed too, the gateway and Agent Sandbox controller stay resident, and lesson 8's Part 3b —
 > repeated Kata guest boots to time the VM tax — took the whole box down mid-run (ssh dropped;
 > lesson 9 could not reach it at all). Lesson 8 had passed that same Part 3b on an 8 GB box
-> carrying `60`+`80` and no gateway, which is what points at memory. Hence the 6–8 / 9 split.
+> carrying `60`+`80` and no gateway, which is what points at memory. Hence the 6–8 / 9 split —
+> **since resolved**: the identity-verified quota bought a 32 GB `PRO2-S`, and all four now share
+> it (see the superseded quota note at the end of this block).
 >
 > **A FOURTH boundary joined that node on 2026-08-13: `kata-fc`.** Substrate `75-k8s-devmapper`
 > adds the devmapper snapshotter — between `70` and `80`, because loading a snapshotter needs
@@ -823,12 +842,16 @@ the two do not share is the machine, read from inside the guest:
 > measures apply → terminal phase and scheduling swamps the VM boot. That is the prior art's
 > finding reproduced, not a regression.
 >
-> **A bigger box is not available on this account.** `POP2-4C-16G`, `PRO2-XS`, `BASIC3-X4C-16G`
-> and `BASIC3-X6C-24G` all fail to create with `has reached its quota (0/0)`, and `PLAY2-MICRO`
-> is the largest `PLAY2`. The catalogue's `availability: available` describes the *offer*, not this
-> account's quota, and this `scw` build has no `account quota` subcommand to check beforehand — so
-> any type outside `PLAY2` costs a failed provision to discover. **If that quota is ever raised,
-> putting all four back on one node is a two-line change** in `infra/lessons.json`.
+> **SUPERSEDED (2026-08-13, same day): the quota was an identity gate, and it is lifted.** The
+> paragraph below was true when written — every type above `PLAY2-MICRO` failed to create with
+> `has reached its quota (0/0)` — but the `0/0` was the account's *unverified identity*, not
+> stock. With identity verified, `PRO2-XS` and `PRO2-S` create normally (measured: both
+> provisioned first try). The predicted two-line change was made the same day: `chapter-03-k8s`
+> is now a `PRO2-S` carrying `90-k8s-openshell` too, and lesson 9 carries `box`.
+>
+> What stays true from the original note: the catalogue's `availability: available` describes the
+> *offer*, never this account's quota, and this `scw` build has no `account quota` subcommand — a
+> quota ceiling still costs a failed provision to discover.
 
 Four throwaway VMs, `fr-par-1`, Ubuntu 24.04, k3s `v1.36.3+k3s1` (containerd
 `2.3.2-k3s2`), node kernel `6.8.0-106-generic` — the same kernel lessons 1–4 recorded,

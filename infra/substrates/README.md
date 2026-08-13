@@ -15,10 +15,11 @@ chapter-grouped, matching `tutorial/chapter-2-one-host/` and
 (`infra/openshift-sno/` is chapter 4's substrate in the same sense — kept apart
 because its install replaces the box's OS and cannot run through `up.sh`.)
 
-- **`chapter-2/`** — `10`–`50`, one host. One box per lesson.
-- **`chapter-3/`** — `60`–`90`, Kubernetes. `60`+`70`+`80` install onto the ONE cluster
-  **lessons 6–8** share (`chapter-03-k8s`); `90` goes on lesson 9's own box. Documented at
-  the end of this file.
+- **`chapter-2/`** — `10`–`50`, one host. `10`+`20`+`30`+`35` install onto the ONE host
+  **lessons 2–4** share (`chapter-02-host`); `50`+`40` build lesson 5's own box, the one
+  lesson pinned off the shared host by OpenShell's private-primary-address requirement.
+- **`chapter-3/`** — `60`–`90`, Kubernetes. All five install onto the ONE cluster
+  **lessons 6–9** share (`chapter-03-k8s`). Documented at the end of this file.
 
 > [!warning]
 > **Chapter 3's order is load-bearing, and it is about restarts rather than files.**
@@ -65,6 +66,16 @@ The obvious fix — a bigger box — **is not available on this account**: `POP2
 being separate: OpenShell is the one chapter-3 boundary **not** selected with `runtimeClassName`
 (its sandboxes take that from the gateway), so it was never part of the per-pod menu.
 
+> [!warning]
+> **SUPERSEDED (2026-08-13, same day): the quota was an identity gate, and it is lifted.** The
+> `0/0` above was the account's *unverified identity*, not stock; with identity verified,
+> `PRO2-XS` and `PRO2-S` create normally. All four chapter-3 lessons now share one `PRO2-S`
+> (32 GB) node carrying `60`+`70`+`75`+`80`+`90`, and lesson 8's Part 3b runs beside the resident
+> gateway without taking it down — measured, see `syllabus.md` § *Verified on this hardware*.
+> `90` runs last and must not restart k3s (it does not: `systemctl --user` services only), so
+> kata-deploy survives it — `check.sh` proves that by booting a Kata guest after all five
+> substrates have run.
+
 > [!important]
 > **This file is a measurement log, and its early entries were superseded on
 > 2026-08-06.** The substrates now run on Scaleway **VMs** (`PLAY2-NANO` /
@@ -93,6 +104,17 @@ being separate: OpenShell is the one chapter-3 boundary **not** selected with `r
 **All three of 10/20/30 coexist on one box** — podman's default runtime stays
 `crun`, containerd runs separately, runsc is opt-in. That was the coexistence
 question, answered.
+
+**Re-answered on the shared `chapter-02-host` (2026-08-13), now with `35` beside them.**
+One `PRO2-XS` carrying `10`+`20`+`30`+`35` in that order: rootless podman still defaults
+to `crun` (4.9.3) and a rootless container still reports the node kernel; `--runtime
+runsc` reports `4.19.0-gvisor`; `io.containerd.kata.v2` boots guest `6.18.35` with 10 PCI
+devices and a `virtiofs` rootfs; `io.containerd.kata-fc.v2 --snapshotter devmapper` boots
+the same guest kernel with **0** PCI devices and an `ext4` rootfs. Order note: `20`'s
+smoke test needs podman (`10` first), `35` restarts containerd (`30` first); nothing
+host-side has chapter 3's revert-on-restart trap, because kata-static is files on disk
+rather than a DaemonSet. With one kata-qemu guest resident the host used 774 MB of
+16 GB (VMM RSS ~272 MB) and 11 of 54 GB of disk — `PRO2-XS` is ample.
 
 ## Firecracker under Kata (2026-08-13) — and two traps that look like success
 

@@ -2,9 +2,9 @@
   "lesson": "lesson-06-k8s",
   "mode": "network-on",
   "boundary": "hardened Pod, scoped NetworkPolicy egress",
-  "generated_at": "2026-08-13T22:20:15+02:00",
+  "generated_at": "2026-08-13T23:52:54+02:00",
   "complete": false,
-  "duration_s": 65.0,
+  "duration_s": 60.6,
   "blocked": 14,
   "scored": 19,
   "host": {
@@ -179,7 +179,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 69.8,
+      "value": 69.5,
       "detail": "",
       "verdict": "INFO"
     },
@@ -188,7 +188,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 126.5,
+      "value": 126.2,
       "detail": "",
       "verdict": "INFO"
     },
