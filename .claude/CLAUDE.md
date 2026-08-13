@@ -66,12 +66,33 @@ not fixed**. Report it as such rather than shipping the green run.
   **Chapter 5 is unwritten.** The syllabus is still the source of truth for what
   lessons exist and in what order, and it is written *before* any lesson directory —
   do not create a leaf the syllabus does not list.
-- **Chapter 4 shares ONE cluster across lessons 10–13**, so its `run.sh` does not
-  provision or destroy. `infra/openshift-sno/install.sh` brings the cluster up (~1.5–2 h)
-  and **`infra/down.sh openshift-sno` is a step you own** — €0.263/hr until you run it.
-  Its `--from <stage>` resume path is the one people reach for; `REPRODUCE.md` §8 is the
-  catalogue of what breaks there and why each fault looks like a broken cluster when it
-  is not.
+- **Two chapters share a box, and a lesson declares it with `box` in `lessons.json`.**
+  `lib.sh`'s `lesson_box()` is the only place that resolves it; every driver calls it
+  before touching state, ssh or rsync. **`./down.sh <a shared lesson>` refuses** — the
+  lesson owns no box, and printing `destroyed, billing stopped` over a live cluster is a
+  false all-clear.
+  - **Chapter 3 lessons 6–8 share `chapter-03-k8s`** (2026-08-13), one k3s VM carrying
+    `60`/`70`/`80` — every boundary a workload selects with `runtimeClassName` — so that field
+    is a real choice from a menu rather than the only runtime installed. **Measured on one
+    node:** `gvisor` and `kata-qemu` coexist, three kernels answer from inside
+    (`6.8.0-106-generic` / `4.19.0-gvisor` / guest `6.18.35`), Kata does not become the
+    default, and 6/7/8 reproduce 14/16/14 of 19 exactly. **Lesson 9 keeps its own box** —
+    OpenShell is not runtime-class-selected (its sandboxes take that from the gateway), and
+    its resident gateway pushed an 8 GB node over during lesson 8's repeated Kata boots.
+    **Every VM type above `PLAY2-MICRO` is quota 0/0 on this account** (POP2, PRO2, BASIC3 all
+    checked), and this `scw` has no `account quota` subcommand — so a bigger box costs a failed
+    provision to discover. Raise that quota and all four fit again in two lines of
+    `lessons.json`. Teardown stays automatic — an EXIT trap in `infra/chapter-03.sh`
+    (which destroys **every** box it used) and in each leaf's `run.sh`. **Substrate order
+    60 → 70 → 80 is load-bearing**: 70 is the only one that restarts k3s, and a restart after
+    80 terminates the kata-deploy DaemonSet, which reverts its own install on the way out.
+  - **Chapter 4 (lessons 10–13) shares `openshift-sno`**, so its `run.sh` does not
+    provision or destroy. `infra/openshift-sno/install.sh` brings the cluster up (~1.5–2 h)
+    and **`infra/down.sh openshift-sno` is a step you own** — €0.263/hr until you run it.
+    Its `--from <stage>` resume path is the one people reach for; `REPRODUCE.md` §8 is the
+    catalogue of what breaks there and why each fault looks like a broken cluster when it
+    is not. It is **not** a substrate and cannot be one: the install replaces the box's OS
+    mid-flight, leaving no `agent` user, no repo checkout and no `uv`.
 - **The subject** — running an agent and its generated code behind a real
   isolation boundary, as a ladder: no sandbox → container → **gVisor** → **Kata
   Containers** → **NVIDIA OpenShell**, across local containers and Kubernetes.
@@ -85,15 +106,20 @@ not fixed**. Report it as such rather than shipping the green run.
 - **podman is the preferred engine**, Docker only where a tool cannot do podman —
   and the lesson must say which and why.
 - **Each lesson is self-contained** — `cd tutorial/<lesson> && ./run.sh` provisions
-  its box, runs it there, and destroys the box. No workspace, no shared package, no
+  the box it runs on, runs it there, and destroys it. No workspace, no shared package, no
   imports across leaves. Running it *is* the test; there is no repo-wide suite. Each
   lesson writes `report.html` + `report.json` beside itself;
-  `infra/report/overall.py` builds the cross-lesson view from those.
+  `infra/report/overall.py` builds the cross-lesson view from those. For chapter 3 the
+  chapter-level runner is the cheaper path: `cd infra && ./chapter-03.sh`
+  provisions once, runs 06→09, and destroys on an EXIT trap.
 - **This is macOS on Apple Silicon driving Linux kernel features.** Lessons do not
   run here: `infra/` provisions a disposable Scaleway box per lesson and the lesson
   runs *there*. A lesson that does not say where its boundary lives is misleading.
 - **`infra/lessons.json` is the only per-lesson hardware table**, read by `infra/lib.sh`
-  with `jq` — never add a second copy. Boxes are provisioned with the `scw` CLI directly
+  with `jq` — never add a second copy. A row names *either* its own hardware *or* a `box`
+  it shares, never both. Substrate scripts are grouped per chapter
+  (`infra/substrates/chapter-2/`, `chapter-3/`) and the arrays carry that path;
+  `check.sh` dispatches on the basename. Boxes are provisioned with the `scw` CLI directly
   (no Terraform: each box is independent, created/destroyed by its own id, so there is no
   shared-state lock and parallel provisioning / cancel are trivial). Lessons 1–5 run on
   **VMs** (say "VM", not "Instance"); only chapter 4's OpenShift box needs bare metal. That

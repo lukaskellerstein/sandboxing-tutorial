@@ -2,9 +2,15 @@
 # One command for this lesson: provision its box, run the lesson on it, destroy the box.
 #
 #   ./run.sh            provision -> run -> destroy
-#   ./run.sh --keep     leave the box up afterwards (debugging; you pay until ./../../infra/down.sh)
+#   ./run.sh --keep     leave the box up afterwards (debugging; you pay until ../../infra/down.sh)
 #
-# The lesson name is this directory's name, so there is nothing to pass and nothing to keep in sync.
+# THIS IS THE ONE CHAPTER-3 LESSON WITH ITS OWN BOX, and the reason is capacity rather than design.
+# Lessons 6-8 share `chapter-03-k8s`, which carries the three boundaries a workload picks with
+# `runtimeClassName`. OpenShell is not one of them — its sandbox pods take their runtime class from
+# the GATEWAY, not per sandbox — so it was never part of the per-pod menu that cluster demonstrates.
+# It is also the heaviest: the gateway StatefulSet and the Agent Sandbox controller stay resident,
+# and on one 8 GB node beside Kata's repeated guest boots the machine went down. infra/lessons.json
+# records the measurement and the quota ceiling that stopped us simply buying a bigger box.
 #
 # The box is destroyed by an EXIT trap, which means it goes away even when the lesson fails, when a
 # substrate fails, or when you Ctrl-C. That is the point: every box here runs a rogue-agent suite,

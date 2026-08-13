@@ -15,6 +15,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/lib.sh"
 
 LESSON="${1:?usage: ./check.sh <lesson>}"
+# Every assertion below interrogates a MACHINE, so resolve to the box up front and use only that.
+# `./check.sh lesson-07-k8s-gvisor` and `./check.sh chapter-03-k8s` must prove the same things,
+# because on a shared chapter they are the same node — and the substrate list they dispatch on
+# belongs to the box, so a four-substrate cluster asserts all four boundaries whichever name you use.
+BOX=$(lesson_box "${LESSON}")
 ALPINE=docker.io/library/alpine:3.22
 #: Chapter 3's pod image — the same agent image, side-loaded onto the node by 60-k8s.sh. NOT :latest,
 #: for the reason images/agent/import-k3s.sh spells out.
@@ -26,6 +31,29 @@ fail() {
   FAILED=1
 }
 FAILED=0
+
+# --- which VMM booted? (both chapters) ---------------------------------------
+
+#: Three readings, one container start: "<kernel> <pci-device-count> <rootfs-fstype>". Every start
+#: here boots a VM and costs seconds, so they are taken together — and they have to come from the
+#: SAME guest anyway to be about one sandbox.
+#:
+#: The PCI count is the field that matters, because the kernel string CANNOT tell QEMU from
+#: Firecracker: both boot the identical guest kernel, and that identity is the finding lessons 4 and
+#: 8 are built on rather than a weakness of this check. Firecracker boots `pci=off` and puts virtio
+#: on MMIO; QEMU emulates a PCI host bridge. Measured: 10 devices under kata-qemu, 0 under kata-fc.
+# shellcheck disable=SC2016  # must expand inside the guest, not here
+GUEST_FACTS='echo $(uname -r) $(ls /sys/bus/pci/devices 2>/dev/null | wc -l) $(grep " / " /proc/mounts | head -1 | cut -d" " -f3)'
+
+# Ask one Kata guest what it is running on, on the CHAPTER 2 rung (nerdctl over containerd). The
+# runtime name is the only parameter that varies, which is exactly the comparison substrate 35
+# exists to make. Chapter 3 asks the same question of a Pod, through k8s_pod_output below.
+kata_guest_facts() {
+  local box="$1" runtime="$2" snapshotter="${3:-}" flags=""
+  [ -n "${snapshotter}" ] && flags="--snapshotter ${snapshotter}"
+  box_ssh "${box}" "sudo nerdctl run --rm --net none ${flags} --runtime ${runtime} \
+    --entrypoint sh ${ALPINE} -c '${GUEST_FACTS}'" 2>/dev/null | tail -1
+}
 
 # --- chapter 3 helpers -------------------------------------------------------
 
@@ -145,13 +173,17 @@ YAML"
   fi
 }
 
-NODE_KERNEL=$(box_ssh "${LESSON}" 'uname -r')
+NODE_KERNEL=$(box_ssh "${BOX}" 'uname -r')
 echo "    node kernel: ${NODE_KERNEL}"
 
-for sub in $(lesson_substrates "${LESSON}"); do
-  case "${sub}" in
+for sub in $(lesson_substrates "${BOX}"); do
+  # Substrates are named by chapter now (`chapter-3/60-k8s`), because chapter 3's four all land on
+  # one shared cluster and the grouping is what makes that set legible. Match on the BASENAME so
+  # every arm below stays the plain substrate name: the chapter a script lives in is a fact about
+  # the tree, never about what the assertion has to prove.
+  case "${sub##*/}" in
     10-podman)
-      got=$(box_ssh "${LESSON}" "podman run --rm --network none ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
+      got=$(box_ssh "${BOX}" "podman run --rm --network none ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       if [ "${got}" = "${NODE_KERNEL}" ]; then
         pass "podman: container runs on the NODE kernel (${got}) — correct, a container is not a kernel boundary"
       else
@@ -164,7 +196,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # cgroup manager gets "Interactive authentication required" from the system D-Bus, and the
       # cgroupfs manager cannot write /sys/fs/cgroup/cgroup.subtree_control. Lesson 3 runs rootful
       # for the same reason, on BOTH runtimes, so its one-variable comparison still holds.
-      got=$(box_ssh "${LESSON}" "sudo podman run --rm --network none --runtime runsc ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
+      got=$(box_ssh "${BOX}" "sudo podman run --rm --network none --runtime runsc ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       case "${got}" in
         *gvisor*) pass "gVisor: sandbox reports its OWN kernel (${got}), not the node's" ;;
         "${NODE_KERNEL}") fail "gVisor: sandbox reports the NODE kernel (${got}) — runsc did NOT engage, this is the silent fallback" ;;
@@ -173,7 +205,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       ;;
 
     30-containerd-kata)
-      got=$(box_ssh "${LESSON}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
+      got=$(box_ssh "${BOX}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       if [ "${got}" = "FAILED" ] || [ -z "${got}" ]; then
         fail "Kata: could not run a container under io.containerd.kata.v2"
       elif [ "${got}" = "${NODE_KERNEL}" ]; then
@@ -183,8 +215,53 @@ for sub in $(lesson_substrates "${LESSON}"); do
       fi
       # Kernel string alone is not proof on RHEL-family hosts (Red Hat builds the guest kernel from
       # the same base). DMI is: a VM reports its hypervisor, metal reports its motherboard.
-      dmi=$(box_ssh "${LESSON}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} cat /sys/class/dmi/id/sys_vendor" 2>/dev/null || echo "?")
+      dmi=$(box_ssh "${BOX}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} cat /sys/class/dmi/id/sys_vendor" 2>/dev/null || echo "?")
       echo "    kata guest DMI sys_vendor: ${dmi}"
+      ;;
+
+    35-containerd-devmapper)
+      # A SECOND hypervisor under the same runtime, so the question is no longer "did a VM boot" —
+      # case 30 settled that — but "WHICH VMM booted". The kernel string cannot answer it: both
+      # hypervisors boot the identical guest kernel, which is the finding lesson 4 is built on.
+      #
+      # /sys/bus/pci/devices does answer it. Firecracker has no PCI bus at all (`pci=off` is on its
+      # kernel command line) and puts virtio on MMIO instead; QEMU emulates a PCI host bridge and
+      # hangs virtio off it. Measured on this box: 10 devices under kata-qemu, 0 under kata-fc.
+      #
+      # Both are asserted, not just the new one. This substrate makes the Firecracker config the
+      # second of Kata's two shipped config slots, and the shim falls back to the first when nothing
+      # names one — so "did kata-qemu quietly become Firecracker" is a real question here, and a
+      # silent hypervisor swap would leave every kata-qemu number in the tutorial wrong.
+      read -r q_kernel q_pci q_rootfs <<<"$(kata_guest_facts "${BOX}" io.containerd.kata.v2)"
+      read -r f_kernel f_pci f_rootfs <<<"$(kata_guest_facts "${BOX}" io.containerd.kata-fc.v2 devmapper)"
+      echo "    kata-qemu: kernel=${q_kernel:-?} pci=${q_pci:-?} rootfs=${q_rootfs:-?}"
+      echo "    kata-fc  : kernel=${f_kernel:-?} pci=${f_pci:-?} rootfs=${f_rootfs:-?}"
+
+      if [ -z "${f_kernel}" ] || [ "${f_kernel}" = "FAILED" ]; then
+        fail "Firecracker: could not run a container under io.containerd.kata-fc.v2 — is the thin-pool up?"
+      elif [ "${f_kernel}" = "${NODE_KERNEL}" ]; then
+        fail "Firecracker: guest kernel == node kernel (${f_kernel}) — no VM was created, the shim fell back"
+      elif [ "${f_pci}" != "0" ]; then
+        fail "Firecracker: the guest has ${f_pci} PCI devices — Firecracker has no PCI bus, so this is QEMU wearing the kata-fc runtime name"
+      else
+        pass "Firecracker: guest kernel ${f_kernel}, and NO PCI bus (${f_pci} devices) — virtio over MMIO, so this really is Firecracker"
+      fi
+
+      # The rootfs type is the devmapper requirement seen from the inside: Firecracker has no
+      # virtio-fs to share a directory in with, so the rootfs arrives as a block device instead.
+      case "${f_rootfs}" in
+        ext4) pass "Firecracker: rootfs is a block device (${f_rootfs}) — what the devmapper snapshotter is for" ;;
+        virtiofs) fail "Firecracker: rootfs is ${f_rootfs} — a shared FS, which Firecracker cannot do; this is not Firecracker" ;;
+        *) echo "    Firecracker rootfs '${f_rootfs}' — unexpected, but the PCI row above is the proof" ;;
+      esac
+
+      if [ "${q_pci}" = "0" ]; then
+        fail "kata-qemu has NO PCI bus — it is running Firecracker, and every kata-qemu measurement on this box is wrong"
+      elif [ -n "${q_pci}" ] && [ "${q_pci}" != "?" ]; then
+        pass "kata-qemu still gets QEMU (${q_pci} PCI devices, rootfs ${q_rootfs}) — the two hypervisors coexist"
+      else
+        fail "kata-qemu: could not read the guest at all"
+      fi
       ;;
 
     40-openshell)
@@ -196,7 +273,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # "0\n0" — which is not equal to "0", and the check then reports a healthy gateway precisely
       # when the gateway is down. That is the exact failure this whole file exists to catch.
       # shellcheck disable=SC2016  # must expand on the box, not here
-      if box_ssh "${LESSON}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
+      if box_ssh "${BOX}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
         pass "OpenShell: gateway reachable and Connected"
       else
         fail "OpenShell: gateway not Connected — see substrates/README.md, this is the private-IP constraint"
@@ -206,7 +283,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
     50-nat-vm)
       # Asked of the HOST, not of the guest. By the time this runs, up.sh has already re-pointed the
       # lesson at the guest, and the guest has no libvirt — so box_ssh here would always fail.
-      got=$(box_ssh_host "${LESSON}" 'sudo virsh domstate openshell-guest 2>/dev/null' || echo "?")
+      got=$(box_ssh_host "${BOX}" 'sudo virsh domstate openshell-guest 2>/dev/null' || echo "?")
       if [ "${got}" = "running" ]; then
         pass "NAT guest: libvirt domain 'openshell-guest' is running"
       else
@@ -214,7 +291,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       fi
       # The guest's whole reason to exist is a PRIVATE primary address on its default-route
       # interface. A public one there means OpenShell will refuse to start, so read it, don't assume.
-      addr=$(box_ssh "${LESSON}" "ip -4 -o addr show scope global | head -1 | awk '{print \$4}'" 2>/dev/null || echo "?")
+      addr=$(box_ssh "${BOX}" "ip -4 -o addr show scope global | head -1 | awk '{print \$4}'" 2>/dev/null || echo "?")
       case "${addr}" in
         10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[01].*)
           pass "NAT guest: primary address ${addr} is private — the topology OpenShell requires"
@@ -224,7 +301,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       ;;
 
     60-k8s)
-      ready=$(box_ssh "${LESSON}" "kubectl get nodes --no-headers 2>/dev/null | awk '{print \$2}'" || echo "?")
+      ready=$(box_ssh "${BOX}" "kubectl get nodes --no-headers 2>/dev/null | awk '{print \$2}'" || echo "?")
       if [ "${ready}" = "Ready" ]; then
         pass "k3s: the node is Ready"
       else
@@ -234,23 +311,38 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # The EXPECTED answer here is "identical", and it is the whole of lesson 6. A pod composes
       # namespaces and cgroups exactly as lesson 2's container did; it is not a kernel boundary, and
       # a reader has to see that stated by the machine before lessons 7 and 8 mean anything.
-      got=$(k8s_pod_output "${LESSON}" sbxchk-kernel "" uname -r)
+      got=$(k8s_pod_output "${BOX}" sbxchk-kernel "" uname -r)
       if [ "${got}" = "${NODE_KERNEL}" ]; then
         pass "pod runs on the NODE kernel (${got}) — correct, a pod is not a kernel boundary"
       else
         fail "pod kernel '${got}' != node '${NODE_KERNEL}' — something is already intercepting, and lesson 6's baseline is wrong"
       fi
 
-      k8s_netpol_enforced "${LESSON}"
+      k8s_netpol_enforced "${BOX}"
       ;;
 
     70-k8s-gvisor)
-      got=$(k8s_pod_output "${LESSON}" sbxchk-gvisor gvisor uname -r)
+      got=$(k8s_pod_output "${BOX}" sbxchk-gvisor gvisor uname -r)
       case "${got}" in
         *gvisor*) pass "gVisor pod reports its OWN kernel (${got}), not the node's" ;;
         "${NODE_KERNEL}") fail "gVisor pod reports the NODE kernel (${got}) — the RuntimeClass was accepted and runc ran anyway, the silent fallback" ;;
         *) fail "gVisor pod: unexpected kernel '${got}'" ;;
       esac
+      ;;
+
+    75-k8s-devmapper)
+      # Only the snapshotter, because that is all this substrate installs. Whether a Firecracker POD
+      # runs is asserted in the 80-k8s-kata case below, which is where both halves exist.
+      #
+      # `ok` is the only state that licenses a claim here. `skip` means containerd loaded the plugin
+      # and declined to configure it, and it is invisible until a kata-fc pod fails minutes later at
+      # sandbox creation — a failure that reads like a broken Kata install and is a missing pool.
+      state=$(box_ssh "${BOX}" "sudo k3s ctr plugins ls | awk '\$2 == \"devmapper\" {print \$4}'" 2>/dev/null | tail -1)
+      if [ "${state}" = "ok" ]; then
+        pass "devmapper snapshotter is ${state} — Firecracker has somewhere to put a block rootfs"
+      else
+        fail "devmapper snapshotter is '${state:-absent}', not ok — every kata-fc pod will fail at sandbox creation"
+      fi
       ;;
 
     80-k8s-kata)
@@ -262,14 +354,14 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # sorts first would be a real hole rather than a cosmetic one: `kata-clh` sorts ahead of
       # `kata-qemu`, so a box where clh worked and qemu did not would pass this check and then fail
       # the lesson. A setup assertion has to test the thing the lesson actually runs.
-      kclass=$(box_ssh "${LESSON}" \
+      kclass=$(box_ssh "${BOX}" \
         "kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -x 'kata-qemu' \
          || kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep '^kata' | head -1" 2>/dev/null || echo "")
       if [ -z "${kclass}" ]; then
         fail "Kata: no kata* RuntimeClass exists — kata-deploy did not register one"
       else
         echo "    kata RuntimeClass: ${kclass}"
-        got=$(k8s_pod_output "${LESSON}" sbxchk-kata "${kclass}" uname -r)
+        got=$(k8s_pod_output "${BOX}" sbxchk-kata "${kclass}" uname -r)
         if [ "${got}" = "FAILED" ] || [ -z "${got}" ]; then
           fail "Kata: could not run a pod under runtimeClassName ${kclass}"
         elif [ "${got}" = "${NODE_KERNEL}" ]; then
@@ -283,8 +375,40 @@ for sub in $(lesson_substrates "${LESSON}"); do
         # It is not available everywhere: measured here, neither kata-clh nor kata-qemu exposes
         # /sys/class/dmi at all, because a minimal guest need not build SMBIOS support in. The kernel
         # comparison above already settled it, so an absent DMI is a fact to print, not a failure.
-        dmi=$(k8s_pod_output "${LESSON}" sbxchk-kata-dmi "${kclass}" cat /sys/class/dmi/id/sys_vendor)
+        dmi=$(k8s_pod_output "${BOX}" sbxchk-kata-dmi "${kclass}" cat /sys/class/dmi/id/sys_vendor)
         echo "    kata guest DMI sys_vendor: ${dmi} (absent on a minimal guest — the kernel row is the proof)"
+      fi
+
+      # --- the SECOND hypervisor, if this node carries the storage for it ------
+      #
+      # kata-deploy registers `kata-fc` on every cluster it touches, so its mere presence in the list
+      # proves nothing at all — without the devmapper snapshotter it is a class that always fails.
+      # Assert it only where substrate 75 put that snapshotter there, and read the name from the
+      # cluster with the same precedence discipline the qemu block above uses.
+      if lesson_substrates "${BOX}" | grep -q '75-k8s-devmapper'; then
+        fclass=$(box_ssh "${BOX}" \
+          "kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -x 'kata-fc' \
+           || kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep '^kata-fc' | head -1" 2>/dev/null || echo "")
+        if [ -z "${fclass}" ]; then
+          fail "Firecracker: no kata-fc RuntimeClass exists — kata-deploy registered no Firecracker shim"
+        else
+          echo "    firecracker RuntimeClass: ${fclass}"
+          # Both facts from ONE pod: each start boots a VM, and they have to describe the same guest.
+          read -r fk fpci frootfs <<<"$(k8s_pod_output "${BOX}" sbxchk-kata-fc "${fclass}" sh -c "'${GUEST_FACTS}'")"
+          echo "    kata-fc: kernel=${fk:-?} pci=${fpci:-?} rootfs=${frootfs:-?}"
+          if [ -z "${fk}" ] || [ "${fk}" = "FAILED" ]; then
+            fail "Firecracker: no pod would run under runtimeClassName ${fclass} — is the devmapper pool up?"
+          elif [ "${fk}" = "${NODE_KERNEL}" ]; then
+            fail "Firecracker: guest kernel == node kernel (${fk}) — no VM was created, the shim fell back"
+          elif [ "${fpci}" != "0" ]; then
+            # The kernel string cannot separate the two hypervisors — both boot the same guest kernel,
+            # which is lesson 8's finding rather than a gap here. The PCI bus can: Firecracker boots
+            # `pci=off` and puts virtio on MMIO, QEMU emulates a PCI host bridge.
+            fail "Firecracker: the guest has ${fpci} PCI devices — Firecracker has no PCI bus, so this is QEMU under the kata-fc name"
+          else
+            pass "Firecracker: guest kernel ${fk}, and NO PCI bus (${fpci} devices) — a different VMM, not just a different name"
+          fi
+        fi
       fi
       ;;
 
@@ -293,12 +417,12 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # nothing, so `$(... | grep -c X || echo 0)` captures "0\n0" — which is not "0", and the check
       # then reports a healthy gateway precisely when the gateway is down.
       # shellcheck disable=SC2016  # must expand on the box, not here
-      if box_ssh "${LESSON}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
+      if box_ssh "${BOX}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
         pass "OpenShell: gateway reachable and Connected"
       else
         fail "OpenShell: gateway not Connected — see substrates/README.md"
       fi
-      crd=$(box_ssh "${LESSON}" "kubectl get crd sandboxes.agents.x-k8s.io -o name 2>/dev/null" || echo "")
+      crd=$(box_ssh "${BOX}" "kubectl get crd sandboxes.agents.x-k8s.io -o name 2>/dev/null" || echo "")
       if [ -n "${crd}" ]; then
         pass "Agent Sandbox CRD installed (${crd})"
       else
@@ -308,4 +432,4 @@ for sub in $(lesson_substrates "${LESSON}"); do
   esac
 done
 
-[ "${FAILED}" -eq 0 ] || die "boundary assertions FAILED for ${LESSON} — the box is not what the lesson claims."
+[ "${FAILED}" -eq 0 ] || die "boundary assertions FAILED for ${BOX} — the box is not what the lesson claims."

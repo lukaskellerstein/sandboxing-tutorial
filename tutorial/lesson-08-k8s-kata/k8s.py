@@ -18,7 +18,7 @@ import subprocess
 import time
 from pathlib import Path
 
-#: The agent image, side-loaded onto the node by ``infra/substrates/60-k8s.sh``.
+#: The agent image, side-loaded onto the node by ``infra/substrates/chapter-3/60-k8s.sh``.
 #:
 #: NOT ``:latest``, and that is a Kubernetes fact rather than a preference: a ``:latest`` tag defaults
 #: ``imagePullPolicy`` to ``Always``, so the kubelet would go to Docker Hub for an image already on
@@ -291,6 +291,60 @@ def time_pod_startup(namespace: str, runtime_class: str | None, *, reps: int = 3
         best = min(best, time.monotonic() - start)
         kubectl("-n", namespace, "delete", "pod", name, "--ignore-not-found", "--now", "--wait=false", check=False)
     return round(best, 2)
+
+
+def vmm_footprint(namespace: str, runtime_class: str, comm_prefix: str, *, settle_s: int = 8) -> float:
+    """RSS of the VMM process **on the node**, in MB, while one pod of ``runtime_class`` is up.
+
+    Every other probe in this repo reads from *inside* the sandbox, on the principle that the only
+    trustworthy answer to "what am I running on" is the sandbox's own. This one has to look the
+    other way, and the reason is the measurement itself: two Kata hypervisors hand the workload
+    identical guests — same kernel, same rootfs, same ``default_memory`` — so nothing readable from
+    inside can distinguish them. The whole difference lives in the host-side process, which is
+    exactly where Firecracker's minimal device model pays off.
+
+    ``comm_prefix`` rather than a full name because ``ps`` truncates ``comm`` to 15 characters, so
+    QEMU appears as ``qemu-system-x86``. The maximum is taken rather than the sum: one sandbox is up,
+    and a sum would quietly fold in any VMM another lesson left running.
+
+    This works because chapter 3's cluster is single-node — the pod's VMM and this process are on
+    the same machine. On a multi-node cluster it would have to be asked of the node the pod landed on.
+    """
+    name = "vmm-weigh"
+    spec: dict[str, object] = {
+        "restartPolicy": "Never",
+        "automountServiceAccountToken": False,
+        "containers": [
+            {
+                "name": "probe",
+                "image": IMAGE,
+                "imagePullPolicy": "IfNotPresent",
+                "command": ["/bin/sh", "-c", "sleep 120"],
+                "resources": {"limits": {"memory": "256Mi", "cpu": "1"}},
+            }
+        ],
+    }
+    if runtime_class:
+        spec["runtimeClassName"] = runtime_class
+    manifest = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name}, "spec": spec}
+
+    kubectl("-n", namespace, "delete", "pod", name, "--ignore-not-found", "--now", check=False)
+    apply(manifest, namespace)
+    try:
+        kubectl("-n", namespace, "wait", "--for=condition=Ready", f"pod/{name}", "--timeout=300s", check=False)
+        # A VMM allocates as its guest boots, so weighing it the instant the pod reports Ready
+        # measures a machine still coming up rather than a running one.
+        time.sleep(settle_s)
+        out = subprocess.run(["ps", "-eo", "comm=,rss="], capture_output=True, text=True, timeout=60).stdout
+        sizes = [int(p[-1]) for ln in out.splitlines() if (p := ln.split()) and p[0].startswith(comm_prefix)]
+        return round(max(sizes) / 1024, 1) if sizes else 0.0
+    finally:
+        # BLOCKING delete, unlike everywhere else in this module, and deliberately. Each of these
+        # pods is a running VM holding ~2 GB on an 8 GB node, and this Part starts several in a row;
+        # a `--wait=false` delete lets the next VM boot while the previous VMM is still resident.
+        # lessons.json records what that costs — a Part 3b that boots Kata guests repeatedly already
+        # took this box down once. Waiting a few seconds is cheaper than an ssh drop mid-lesson.
+        kubectl("-n", namespace, "delete", "pod", name, "--ignore-not-found", "--now", check=False)
 
 
 def runtime_classes() -> list[str]:

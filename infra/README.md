@@ -1,10 +1,29 @@
-# `infra/` — one predefined box per lesson
+# `infra/` — a predefined box per lesson, or per chapter
 
-Every lesson in this tutorial runs on **its own disposable Scaleway box**, brought
-up by one command and destroyed by another. That is not convenience: the rogue
-agent writes a backdoor, installs a package that executes code at install time, and
-exhausts resources. Those are real side effects, and they are only acceptable on a
-machine that is deleted minutes later.
+Every lesson in this tutorial runs on a **disposable Scaleway box**, brought up by one
+command and destroyed by another. That is not convenience: the rogue agent writes a
+backdoor, installs a package that executes code at install time, and exhausts resources.
+Those are real side effects, and they are only acceptable on a machine that is deleted
+minutes later.
+
+Usually that box is the lesson's own. **Two chapters instead share one**, and a lesson says
+so by carrying `box` in `lessons.json` instead of hardware:
+
+| Chapter | Box | Why it shares | Who tears it down |
+| :-- | :-- | :-- | :-- |
+| 3 (lessons 6–**8**) | `chapter-03-k8s` | So every runtime a workload can select is installed at once and each lesson's `runtimeClassName` is a real choice | an EXIT trap, as everywhere else |
+| 4 (lessons 10–13) | `openshift-sno` | Installing single-node OpenShift takes longer than a lesson does | **you**, and nothing else will |
+
+**Lesson 9 keeps its own box.** OpenShell is the one chapter-3 boundary not chosen with
+`runtimeClassName` — its sandboxes take that from the gateway — so it was never part of the menu
+the shared cluster exists to show, and its resident gateway is what pushed an 8 GB node over during
+lesson 8's repeated Kata guest boots. `infra/lessons.json` records the measurement and the account
+quota ceiling that ruled out simply buying a bigger box.
+
+`lesson_box()` in `lib.sh` is the one place that resolves it, and every driver calls it
+before touching state, ssh or rsync. `./down.sh lesson-06-k8s` therefore **refuses**: the
+lesson does not own a box, and reporting `destroyed, billing stopped` over a cluster that
+is still running is the expensive half of the 2026-08-10 incident wearing a different hat.
 
 ```bash
 cd infra
@@ -135,6 +154,14 @@ the leftovers a `terminate` should have taken with it: **detached volumes** and
 `terminate with-ip with-block` removes both, so the sweep only *warns* — it never
 deletes a volume, which could belong to work outside this repo.
 
+That check asks **two** volume APIs, and asking one is a false all-clear. Every lesson's
+root volume is `sbs`, which lives in the Block API; `scw instance volume list` returns
+`l_ssd`/`b_ssd` only and reports `0` for an sbs orphan. A 20 GB volume detached on
+2026-08-08 billed unnoticed until `scw block volume list` was run on 2026-08-13. Since a
+block volume is named after its image rather than carrying the `sbx-` prefix, there is no
+safe way to attribute it automatically — `down.sh` prints each id with the exact
+`scw block volume delete` line and lets a human decide.
+
 ## When state and the account disagree
 
 A `.state/*.env` file is a cache, not a fact, and the gap between them is where money
@@ -198,7 +225,9 @@ infra/
 ├── ctl.py                   the headless core: detached runs, one JSON answer, per-run logs
 ├── tui/                     the optional Ink panel — a client of ctl.py, the only Node here
 ├── openshift-sno/           the chapter-4 cluster: install.sh + its runbook and traps
-├── substrates/              one script per boundary, run ON the box
+├── substrates/              one script per boundary, run ON the box, grouped by chapter
+│   ├── chapter-2/           10..50 — one box per lesson
+│   └── chapter-3/           60..90 — onto the one cluster lessons 6-8 share
 ├── report/                  scorecard -> report.html (stdlib only, no deps)
 └── images/agent/            the one image every lesson runs
 ```

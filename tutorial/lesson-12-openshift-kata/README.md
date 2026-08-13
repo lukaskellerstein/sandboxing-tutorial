@@ -1,8 +1,9 @@
 # Lesson 12 — Kata on OpenShift: the same boundary, as a product
 
 Lesson 8 assembled Kata on k3s: a Helm chart, a `k8sDistribution` value that had to be
-right, a DaemonSet, a containerd drop-in, and 25 RuntimeClasses to choose between. It
-worked, and it was visibly a thing you *built*.
+right, a DaemonSet, a containerd drop-in, a devmapper thin-pool for the Firecracker
+variant, and 35 RuntimeClasses to choose between. It worked, and it was visibly a thing
+you *built*.
 
 Here the same boundary arrives as an **operator**. `KataConfig` is a two-line custom
 resource, the operator drives a MachineConfig, the node reboots once, and a RuntimeClass
@@ -80,6 +81,23 @@ Measured on single-node OpenShift 4.18.49, sandboxed-containers operator `v1.12.
 
 `kata_kernel_identity` is recorded as **INFO and never scored**. Scoring it would mark
 this rung as failing the very thing it does best.
+
+## One hypervisor, and no choice about it
+
+Lessons [4](../lesson-04-container-kata/) and [8](../lesson-08-k8s-kata/) both run Kata on
+**two** hypervisors — QEMU and Firecracker — and lesson 8 picks between them by changing
+`runtimeClassName` from `kata-qemu` to `kata-fc`.
+
+**That choice does not exist here.** OpenShift sandboxed containers ships **QEMU only**:
+the operator (v1.12.1) registers a single RuntimeClass, `kata`, and the guest is a
+QEMU/KVM VM (`REPRODUCE.md` §8 records it as *"real KVM VM (QEMU/`kata-monitor` on
+node)"*). There is no `kata-fc` to name, and no supported way to add one — the same
+reason gVisor is absent from this chapter, and the same principle: **chapter 4 teaches
+what OpenShift actually ships**, not what upstream Kata can be made to do.
+
+So the layer lesson 4 spends a whole Part on — a hypervisor being a component *below* the
+runtime, swappable — is real, and on this platform it is the vendor's choice rather than
+yours. Which is worth knowing before you plan a migration around it.
 
 ## Peer pods and Confidential Containers — named and scoped out
 

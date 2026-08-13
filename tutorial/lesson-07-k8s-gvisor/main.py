@@ -17,7 +17,7 @@ still writes nothing down. That is lesson 9's territory, and lesson 7 leaves it 
 
 **Where this really runs — and ONLY where.** The boundary lives in single-node k3s on this lesson's
 disposable Scaleway box, with `runsc` registered as a containerd runtime by
-``infra/substrates/70-k8s-gvisor.sh``. Your workstation has neither, so there is nothing honest to
+``infra/substrates/chapter-3/70-k8s-gvisor.sh``. Your workstation has neither, so there is nothing honest to
 run here. ``main.py`` is aware of the box: on it (``infra/run.sh`` sets
 ``SANDBOXING_TUTORIAL_DISPOSABLE=1``) it drives the pods for real; on your machine it runs the
 lesson ON the box when one is up, and with no box it runs nothing and tells you to start one.

@@ -3,8 +3,60 @@
 Each script installs one boundary and asserts it engages **from inside** (kernel
 identity), never from the flag.
 
-`10`–`50` are chapter 2 (one host); `60`–`90` are chapter 3 (Kubernetes) and are
-documented at the end of this file.
+They live in per-chapter directories, and the `substrates` arrays in `lessons.json` carry
+that path (`chapter-3/60-k8s`). `up.sh` interpolates it straight into the path it runs, so
+adding a chapter needs no code change; `check.sh` dispatches on the **basename**, so its
+assertions stay named after the boundary rather than after the tree.
+
+- **`chapter-2/`** — `10`–`50`, one host. One box per lesson.
+- **`chapter-3/`** — `60`–`90`, Kubernetes. `60`+`70`+`80` install onto the ONE cluster
+  **lessons 6–8** share (`chapter-03-k8s`); `90` goes on lesson 9's own box. Documented at
+  the end of this file.
+
+> [!warning]
+> **Chapter 3's order is load-bearing, and it is about restarts rather than files.**
+> `70-k8s-gvisor.sh` and `75-k8s-devmapper.sh` are the substrates that run `systemctl restart
+> k3s`. A restart *after* `80` terminates the kata-deploy DaemonSet pod, which reverts its
+> own installation on the way out. So: **60 → 70 → 75 → 80**, and each of `70` and `75`
+> writes additively (neither owns containerd's config — kata-deploy writes into the same
+> directory) and restarts only when its own file actually changed, so re-running `up.sh`
+> against a live shared cluster does not bounce Kata.
+>
+> **`75` is numbered where it is for exactly that reason.** Loading a snapshotter needs
+> containerd restarted, k3s *embeds* containerd, and there is no post-`80` seam — so the
+> storage has to be in place before kata-deploy arrives, not added afterwards.
+
+## gVisor and Kata DO coexist on one k3s node (2026-08-13)
+
+The open question is answered, and it was answered empirically rather than by reasoning about
+kata-deploy's internals — two plausible mechanisms disagreed about whether it appends to the same
+`*.tmpl` or writes a `config-v3.toml.d/` drop-in, so `70` was simply made additive under both and
+`check.sh` was left to settle it. On one `PLAY2-MICRO` running `60`+`70`+`80`:
+
+```text
+kubectl get runtimeclass   gvisor (83s)  kata-qemu + ~18 variants (75s)   <- both registered
+node / plain pod           6.8.0-106-generic     <- Kata did NOT become the default runtime
+runtimeClassName: gvisor   4.19.0-gvisor
+runtimeClassName: kata-qemu 6.18.35              <- a real guest VM, same kernel metal recorded
+```
+
+All read from inside the sandbox. Lessons 6, 7 and 8 then reproduced their separate-box scores
+exactly (14, 16, 14 of 19).
+
+## …but `90-k8s-openshell` does not fit beside them on 8 GB
+
+With `90` also installed, the OpenShell gateway and Agent Sandbox controller stay resident from
+provisioning onward, and lesson 8's **Part 3b** — which boots Kata guests repeatedly to time the
+per-pod VM tax — took the whole box down mid-run: ssh dropped (`Connection closed by remote host`),
+and lesson 9 could not reach the machine at all afterwards. Lesson 8 had passed that same Part 3b
+on an 8 GB box carrying `60`+`80` and no gateway, which is what points at memory rather than at a
+substrate conflict.
+
+The obvious fix — a bigger box — **is not available on this account**: `POP2-4C-16G`, `PRO2-XS`,
+`BASIC3-X4C-16G` and `BASIC3-X6C-24G` all fail to create with `has reached its quota (0/0)`, and
+`PLAY2-MICRO` is the largest `PLAY2`. So lesson 9 keeps its own box. It also loses the least by
+being separate: OpenShell is the one chapter-3 boundary **not** selected with `runtimeClassName`
+(its sandboxes take that from the gateway), so it was never part of the per-pod menu.
 
 > [!important]
 > **This file is a measurement log, and its early entries were superseded on
@@ -28,11 +80,55 @@ documented at the end of this file.
 | `10-podman.sh` | podman rootless container | 2 | ✅ **works** | plain container → `uname -r` = **6.8.0-88-generic** (host kernel — no kernel boundary, correct for lesson 2) |
 | `20-runsc.sh` | gVisor (`runsc`) | 3 | ✅ **works** | container under `--runtime runsc` → `uname -r` = **4.19.0-gvisor**. **No `label=disable` needed** on Ubuntu (that trap was CoreOS-only) |
 | `30-containerd-kata.sh` | Kata (containerd + nerdctl + kata-static) | 4 | ✅ **works** | `--runtime io.containerd.kata.v2` → `uname -r` = **6.18.35** (a real guest VM kernel, ≠ node's 6.8.0-88). Coexists with podman (daemonless) |
+| `35-containerd-devmapper.sh` | Firecracker as a second hypervisor under Kata | 4 | ✅ **works** | `--snapshotter devmapper --runtime io.containerd.kata-fc.v2` → **0 PCI devices** and `rootfs=ext4`, against kata-qemu's 10 and `virtiofs`. Same guest kernel `6.18.35` under both. See below |
 | `40-openshell.sh` | NVIDIA OpenShell | 5 | ⚠️ **installs; blocked on podman version** | see below |
 
 **All three of 10/20/30 coexist on one box** — podman's default runtime stays
 `crun`, containerd runs separately, runsc is opt-in. That was the coexistence
 question, answered.
+
+## Firecracker under Kata (2026-08-13) — and two traps that look like success
+
+`35-containerd-devmapper.sh` adds a **second hypervisor** under the runtime lesson 4
+already installed. It is not a new rung: both boot the same guest kernel through KVM,
+and lesson 4's score is unchanged at 7/13. What differs is the machine underneath.
+
+```text
+                 kernel     /sys/bus/pci/devices   rootfs
+kata-qemu        6.18.35    10                     virtiofs
+kata-fc          6.18.35     0                     ext4
+```
+
+**The kernel string cannot tell them apart** — that is the finding, not a gap in the
+check. `/sys/bus/pci/devices` can: Firecracker boots with `pci=off` and puts virtio on
+MMIO (`/sys/bus/virtio/devices/virtio0` → `virtio-mmio-cmdline/virtio-mmio.0`, where
+QEMU's points at `pci0000:00/...`). The `rootfs` column is the devmapper requirement
+seen from inside: Firecracker has virtio-block and **no virtio-fs**, so the container
+rootfs cannot be shared in and arrives as a block device instead.
+
+Two things cost a box each to find, and both exit 0 or read as an unrelated bug:
+
+1. **A `containerd-shim-kata-fc-v2` symlink silently runs QEMU.** The shim does *not*
+   key its config off its own binary name — it falls back to the default configuration
+   and boots QEMU while answering to the Firecracker runtime name. Nothing in the output
+   says so; only the PCI count does. Every guide that describes the symlink is describing
+   a Kata older than 4.0.0.
+2. **`KATA_CONF_FILE` is allow-listed as of Kata 4.0.0** — the shim symlink-resolves it
+   and refuses anything that is not one of its **two** shipped config paths, with
+   `only shipped Kata configuration files are accepted`. Kubernetes does not meet this:
+   kata-deploy passes the path as a containerd runtime option (`ConfigPath`), which is
+   CRI-only, and nerdctl is not a CRI client. So the substrate registers the Firecracker
+   config *as* the second shipped path and pins QEMU into the first —
+   `/etc/kata-containers/configuration.toml` → `configuration-qemu.toml`, which is
+   searched first, so a shim invoked with no config named still gets QEMU. The failure
+   mode of the arrangement is "the hypervisor you already had", never a silent swap, and
+   `check.sh` asserts both halves.
+
+**Without the thin-pool a Firecracker container dies as
+`failed to mount /run/kata-containers/shared/containers/<id>/rootfs … ENOENT`** — which
+reads like a Kata bug and is a missing storage prerequisite. That is the same symptom as
+upstream [kata-containers#12558](https://github.com/kata-containers/kata-containers/issues/12558),
+still open.
 
 ## OpenShell (lesson 5) — precise status
 
@@ -265,6 +361,7 @@ cannot host at all.
 | :-- | :-- | :-- | :-- | :-- |
 | `60-k8s.sh` | k3s `v1.36.3+k3s1`, containerd `2.3.2-k3s2` | 6 | ✅ **works** | plain pod → `uname -r` = **6.8.0-106-generic**, the node's. Correct: a pod is not a kernel boundary |
 | `70-k8s-gvisor.sh` | gVisor `release-20260803.0` as a containerd runtime + RuntimeClass | 7 | ✅ **works** | pod under `runtimeClassName: gvisor` → **4.19.0-gvisor**, `/sys/module` 216 → **0** |
+| `75-k8s-devmapper.sh` | devmapper snapshotter, so `kata-fc` stops being decorative | 8 | ✅ **works** | pod under `runtimeClassName: kata-fc` → **0 PCI devices** against `kata-qemu`'s 10, same guest kernel. See below |
 | `80-k8s-kata.sh` | kata-deploy `4.0.0` Helm chart, `k8sDistribution=k3s` | 8 | see below | |
 | `90-k8s-openshell.sh` | agent-sandbox `v0.5.4` + OpenShell chart `0.0.99` | 9 | see below | |
 
@@ -327,6 +424,44 @@ cannot host at all.
 - **`~/.sandboxing-tutorial.env` must be APPENDED to, with a guard.** Lesson 9 runs
   `60-k8s.sh` *and* `90-k8s-openshell.sh`, and a substrate that truncates it would strip
   the `KUBECONFIG` the previous one exported.
+
+### `kata-fc` was always registered here, and never worked (2026-08-13)
+
+kata-deploy registers a RuntimeClass per shim — **35** of them on this cluster — and `kata-fc` has
+been in that list since chapter 3 was built. Naming it got you a pod that never starts:
+
+```text
+failed to create containerd container: error unpacking image:
+unable to initialize unpacker: snapshotter must be provided to unpack
+```
+
+**Registered is not working**, and the gap is storage rather than Kata. Firecracker has virtio-block
+and **no virtio-fs**, so a container rootfs cannot be shared in and must arrive as a block device —
+which is the devmapper snapshotter's job. `75-k8s-devmapper.sh` supplies it.
+
+What it deliberately does **not** do is configure a per-runtime snapshotter, because kata-deploy
+already has:
+
+```toml
+[plugins."io.containerd.cri.v1.runtime".containerd.runtimes.kata-fc]
+snapshotter = "devmapper"
+```
+
+on `kata-fc` **and on nothing else** — `kata-qemu` carries no snapshotter line at all and so stays on
+the cluster default. The qemu-on-overlayfs / fc-on-devmapper split therefore comes free and correct
+from upstream, and a second copy of that decision here would be a second thing to keep in sync.
+
+Two mechanics worth keeping:
+
+- **The drop-in is the seam.** k3s generates
+  `imports = [".../config-v3.toml.d/*.toml"]` into every config it writes, and kata-deploy uses that
+  directory (`kata-deploy.toml`). `75` drops `devmapper.toml` beside it — two files, two distinct
+  tables, nothing shared to clobber, and the gVisor template `70` writes is untouched.
+- **An image is unpacked for ONE snapshotter.** `60-k8s.sh` side-loads the agent image into
+  overlayfs, and the kubelet never pulls a `:v1` image the node already has — so nothing would put
+  those layers into devmapper, and a kata-fc pod would fail at sandbox creation on a node where
+  `crictl images` plainly lists the image. `images/agent/import-k3s.sh` now imports a second time
+  with `--snapshotter devmapper` wherever that snapshotter is configured.
 
 ### Lesson 9 — OpenShell's kubernetes driver WORKS, and the NAT guest is not needed
 

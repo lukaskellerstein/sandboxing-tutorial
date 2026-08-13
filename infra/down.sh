@@ -27,12 +27,27 @@ PREFIX=sbx-
 # and the server list reading empty looks exactly like "all clear". A `terminate with-block with-ip`
 # should leave none, so this only WARNS — it never deletes, because a volume could belong to work
 # outside this repo. Foreign (non-sbx-) boxes are reported and left alone.
+#
+# TWO volume APIs, and asking only the first is a silent all-clear. `scw instance volume list`
+# returns l_ssd/b_ssd volumes ONLY; an `sbs` volume — which lib.sh's box_create_vm makes for EVERY
+# current lesson — lives in the Block API and is invisible to it. On 2026-08-13 a 20 GB sbs root
+# volume detached since 2026-08-08 sat in fr-par-1 billing ~EUR 0.06/day while `instance volume
+# list` reported 0. A block volume carries no sbx- prefix to attribute it by (its name comes from
+# the image: "Ubuntu 24.04 Noble Numbat_sbs_volume_0"), so the ids are printed for a human to judge.
 report_leftovers() {
-  local vols ips
+  local vols ips blk blkids
   vols=$(scw instance volume list zone="${ZONE}" -o json 2>/dev/null | jq '[.[] | select(.server == null)] | length')
   ips=$(scw instance ip list zone="${ZONE}" -o json 2>/dev/null | jq '[.[] | select(.server == null)] | length')
+  blkids=$(scw block volume list zone="${ZONE}" -o json 2>/dev/null | jq -r '.[] | select(((.references // []) | length) == 0) | .id')
+  blk=$(printf '%s' "${blkids}" | grep -c . || true)
   [ "${vols:-0}" -gt 0 ] && echo "    WARNING: ${vols} detached volume(s) still exist — 'scw instance volume list zone=${ZONE}'"
   [ "${ips:-0}" -gt 0 ] && echo "    WARNING: ${ips} unattached flexible IP(s) still exist — 'scw instance ip list zone=${ZONE}'"
+  if [ "${blk:-0}" -gt 0 ]; then
+    echo "    WARNING: ${blk} detached BLOCK volume(s) still billing — 'scw block volume list zone=${ZONE}'"
+    while read -r id; do
+      [ -z "${id}" ] || echo "               scw block volume delete ${id} zone=${ZONE}"
+    done <<<"${blkids}"
+  fi
   scw instance server list zone="${ZONE}" -o json \
     | jq -r --arg p "${PREFIX}" '.[] | select(.name | startswith($p) | not) | "    (not ours, left alone) vm        \(.name)"'
   scw baremetal server list zone="${ZONE}" -o json \
@@ -62,6 +77,20 @@ sweep_orphans() {
   [ "${found}" -eq 0 ] && say "nothing with the ${PREFIX} prefix was left running"
   report_leftovers
 }
+
+# A lesson that SHARES a box must never be destroyed by its own name, and this guard is the reason
+# the sharing is safe at all. Without it the failure is silent and expensive: a shared lesson has no
+# .state file of its own, so box_destroy falls through to its by-name branch, looks for a console
+# name that was never created, matches nothing, exits 0 — and this script then prints
+# `destroyed, billing stopped` over a cluster that is still running and still billing. That is a
+# FALSE ALL-CLEAR, the same class of bug as the 2026-08-10 incident in the header, and the only
+# difference is that this one bills quietly instead of destroying a neighbour.
+if [ -n "${1:-}" ] && [ "${1}" != "--all" ]; then
+  _down_box=$(lesson_box "${1}")
+  [ "${_down_box}" = "${1}" ] || die "${1} does not own a box — it shares '${_down_box}' with the rest of its chapter.
+       Destroying it means destroying the cluster every one of those lessons runs on:
+         ./down.sh ${_down_box}"
+fi
 
 # One target is a target; `--all` is not, and there is no per-target run directory to record it in.
 [ "${1:-}" = "--all" ] || run_track down "${1:?usage: ./down.sh <lesson>   (or --all)}"

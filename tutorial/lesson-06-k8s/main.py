@@ -20,7 +20,7 @@ method* it used, and it writes **nothing down** when it drops a packet. Those ar
 they are the ``policy`` rows on this lesson's own scorecard, and they are lesson 9's reason to exist.
 
 The boundary lives in single-node k3s on this box's own kernel — the same kernel `uname -r` reports
-on the node. See ``infra/substrates/60-k8s.sh``.
+on the node. See ``infra/substrates/chapter-3/60-k8s.sh``.
 
     # 1. start the box (once):
     cd ../../infra && ./up.sh lesson-06-k8s     # or press 'u' in the sbx-tui panel

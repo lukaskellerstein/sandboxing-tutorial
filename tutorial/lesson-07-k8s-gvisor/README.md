@@ -21,7 +21,7 @@ cd tutorial/lesson-07-k8s-gvisor
 ## What a RuntimeClass actually is
 
 A named pointer to a runtime the **node** has installed. Two halves have to line up,
-and [`infra/substrates/70-k8s-gvisor.sh`](../../infra/substrates/70-k8s-gvisor.sh)
+and [`infra/substrates/chapter-3/70-k8s-gvisor.sh`](../../infra/substrates/chapter-3/70-k8s-gvisor.sh)
 does both:
 
 1. containerd learns the runtime. k3s **regenerates** its containerd config on every

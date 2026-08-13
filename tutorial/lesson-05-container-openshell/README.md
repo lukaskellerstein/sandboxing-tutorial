@@ -214,6 +214,6 @@ of which produces a confusing failure if you do not know it:
 7. **`openshell doctor check` is advisory, not a gate.** Under `podman-docker`
    emulation its Docker item fails on a template field podman does not implement
    (`can't evaluate field ServerVersion`) while the compute driver is healthy. Both
-   `main.py` and `infra/substrates/40-openshell.sh` treat it as advisory — an
+   `main.py` and `infra/substrates/chapter-2/40-openshell.sh` treat it as advisory — an
    earlier version of the substrate ran it under `set -e` and threw away a working
    box.

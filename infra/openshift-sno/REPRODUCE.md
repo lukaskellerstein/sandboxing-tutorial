@@ -305,7 +305,7 @@ This runbook is manual/agent-followable. To make it one-command (`infra/up.sh --
 1. A `"kind": "baremetal"` row in `lessons.json` for EM-B112X — the
    `lesson-box` module already builds Elastic Metal and waits on the install, so
    this is a table entry rather than a new script. Capture CIDR/disks after apply.
-2. `substrates/90-openshift-sno.sh` — generate ignition from a template + the real CIDR; boot rescue; docker-on-sdb; kexec-into-live; poll for API; add `/etc/hosts`; push `oc`.
+2. `openshift-sno/install.sh` — generate ignition from a template + the real CIDR; boot rescue; docker-on-sdb; kexec-into-live; poll for API; add `/etc/hosts`; push `oc`. (Earlier drafts of this note called it `substrates/90-openshift-sno.sh`; no such substrate was ever written, and it could not be one — the install replaces the box's OS mid-flight, so there is no `agent` user, no repo checkout and no `uv` left for `up.sh`'s substrate model to use.)
 3. Decide the `*.apps` DNS story (on-node dnsmasq wildcard) if the web console is ever wanted.
 4. Idempotency + a `--teardown` that `scw baremetal server delete`s and reverts the client MTU.
 5. Assert-from-inside checks baked into `check.sh` (DMI=KVM for Kata; SCC reject for admission).

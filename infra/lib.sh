@@ -250,12 +250,28 @@ lesson_field() {
   echo "${v}"
 }
 
-lesson_kind() { lesson_field "$1" kind; }
-lesson_type() { lesson_field "$1" type; }
+# The box a lesson RUNS ON — usually itself, because one disposable box per lesson is the model.
+# Chapter 3's four lessons instead carry `"box": "chapter-03-k8s"` and share one cluster, so that the
+# runtime each of them selects is a real choice from a menu where the other three are installed and
+# working beside it. A shared lesson keeps its own identity everywhere else: its directory, its
+# report, its run history. Only the machine is shared.
+#
+# `// $l` means every other lesson resolves to itself, so callers never branch on whether sharing is
+# in play. It is also why an unknown name survives this and dies with a useful message downstream,
+# in lesson_field, rather than here with a jq error.
+lesson_box() { jq -r --arg l "$1" '.[$l].box // $l' "${LESSONS_JSON}"; }
+
+# Hardware belongs to the BOX, never to the lesson, so these resolve through lesson_box first. That
+# is what lets a shared lesson carry no kind/type/image of its own — duplicating those onto all four
+# would be the "generated second copy" lessons.json's own header warns drifts.
+lesson_kind() { lesson_field "$(lesson_box "$1")" kind; }
+lesson_type() { lesson_field "$(lesson_box "$1")" type; }
 
 # Substrate scripts, in order. An empty list is meaningful: lesson 1 IS the bare box.
+# Read from the BOX: the substrates are what is installed on the machine, and on a shared cluster all
+# four lessons see the same set.
 lesson_substrates() {
-  jq -r --arg l "$1" '.[$l].substrates[]?' "${LESSONS_JSON}"
+  jq -r --arg l "$(lesson_box "$1")" '.[$l].substrates[]?' "${LESSONS_JSON}"
 }
 
 # --- provisioning (scw, one independent box per lesson) ----------------------

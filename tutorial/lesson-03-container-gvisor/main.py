@@ -112,7 +112,7 @@ def engine_argv() -> list[str]:
             "    cd infra && ./up.sh lesson-03-container-gvisor && ./run.sh lesson-03-container-gvisor"
         )
     if shutil.which("podman") is None:
-        sys.exit("  podman not found — run infra/substrates/10-podman.sh")
+        sys.exit("  podman not found — run infra/substrates/chapter-2/10-podman.sh")
     return ["podman"] if os.geteuid() == 0 else ["sudo", "podman"]
 
 

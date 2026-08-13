@@ -168,8 +168,9 @@ comparable.
 
 ## Where this runs, and why not on your laptop
 
-**A disposable Scaleway box per lesson, provisioned by Terraform and destroyed
-after.** A deliberate reversal of the obvious choice, for three measured reasons.
+**A disposable Scaleway box per lesson, provisioned with the `scw` CLI and destroyed
+after — except where a whole chapter shares one.** A deliberate reversal of the obvious
+choice, for three measured reasons.
 
 **1. A fresh machine per lesson is what makes the demonstration honest.** The rogue
 agent installs a backdoor, opens a reverse shell and exhausts resources — real
@@ -199,6 +200,7 @@ only place in the tutorial that does.
 | :-- | :-- | :-- | --: |
 | Lessons 1–3 — one box per lesson | VM | `PLAY2-NANO` (2 vCPU, 4 GB) | **€0.028/hr** |
 | Lessons 4–5 — one box per lesson | VM | `PLAY2-MICRO` (4 vCPU, 8 GB) | **€0.055/hr** |
+| Chapter 3 — one box for lessons 6–8, one for 9 | VM | `PLAY2-MICRO` (4 vCPU, 8 GB) | **€0.055/hr** |
 | Chapter 4 — one box for all four lessons | bare metal | `EM-B112X-SSD` (12c/24t, 192 GB) | **€0.263/hr** |
 
 Chapters 1–3 used to take metal too, on the argument that only metal makes "a
@@ -215,10 +217,31 @@ The one claim metal did buy is now gone and is not worth buying back: on a VM th
 container still gives you the whole machine, which is the claim lessons 1–3 actually
 make.
 
-Chapter 4 shares its box because installing single-node OpenShift takes far longer
-than a lesson does; re-installing it four times would be absurd. Everywhere else,
-`up.sh <lesson>` gives you a clean machine and `down.sh` destroys it. Working
-through chapters 1–3 costs well under **€1**.
+**Two chapters share a box, for opposite reasons.** Chapter 4 shares because installing
+single-node OpenShift takes far longer than a lesson does; re-installing it four times
+would be absurd, and its teardown is a step a human owns. **Chapter 3 shares for a
+teaching reason, not a cost one** — short-lived small boxes cost about the same either
+way. Its claim is *one cluster, one field selects between boundaries*, and on a box
+carrying gVisor alone lesson 7's `runtimeClassName: gvisor` is a choice from a menu of
+one. On the shared cluster the other runtimes are installed and provably working beside
+it, and `check.sh` asserts each from inside before any lesson runs. Teardown stays
+automatic: `infra/chapter-03.sh` destroys every box it used on an EXIT trap,
+and so does each lesson's own `run.sh`.
+
+**Lessons 6–8 share; lesson 9 does not**, and that split is a measured capacity limit
+rather than a design choice. The shared node carries exactly the boundaries a workload
+selects with `runtimeClassName` — none, `gvisor`, `kata-qemu`. OpenShell is not one of
+them (its sandboxes take their runtime class from the *gateway*, since `openshell sandbox
+create` has no such flag), and it is the heaviest: with its gateway resident, lesson 8's
+Part 3b — which boots Kata guests repeatedly to time the VM tax — took the whole 8 GB box
+down. A bigger box is the obvious fix and **is not available on this account**: see the
+quota note below.
+
+The bill for sharing is honest and worth stating: running ONE of lessons 6–8 now installs
+three substrates, ~25 minutes rather than ~8. `run-all.sh` pays it once for the chapter.
+
+Everywhere else, `up.sh <lesson>` gives you a clean machine and `down.sh` destroys it.
+Working through chapters 1–3 costs well under **€1**.
 
 > [!warning]
 > **The honest cost of this decision:** a Scaleway account is a prerequisite from
@@ -338,6 +361,15 @@ client, so `--runtime runsc` simply works. **Kata requires containerd** (it is a
 shim-v2; Podman cannot drive it on any OS), so that rung uses `nerdctl`, and the
 lesson says so and says why. **No lesson requires Docker.**
 
+That choice has one consequence worth stating here, because it looks like a bug
+when you meet it. Kata's supported way to select a *hypervisor* is the containerd
+runtime option `ConfigPath`, which is **CRI-only** — so kata-deploy uses it on
+Kubernetes and `nerdctl`, not being a CRI client, cannot. Lesson 4 therefore
+registers Firecracker's config as one of Kata's two *shipped* config paths and
+pins QEMU into the other; `infra/substrates/chapter-2/35-containerd-devmapper.sh`
+explains it. A plain `containerd-shim-kata-fc-v2` symlink does **not** work: as of
+Kata 4.0.0 it silently boots QEMU under the Firecracker name.
+
 ---
 
 ## `infra/`
@@ -354,22 +386,28 @@ cd infra
 ```text
 infra/
 ├── up.sh · run.sh · down.sh · check.sh · ssh.sh
-├── terraform/
-│   ├── lessons.json            THE per-lesson hardware table — the only copy. Terraform reads it
-│   │                           with jsondecode(), lib.sh reads it with jq.
-│   └── modules/lesson-box/     one module, both products (vm | baremetal) + the cloud-init user
-├── substrates/                 all run ON the provisioned box
-│   ├── 10-podman.sh
-│   ├── 20-runsc.sh            gVisor
-│   ├── 30-containerd-kata.sh  containerd + nerdctl + kata-static
-│   ├── 40-openshell.sh        OpenShell (pinned)
-│   ├── 50-nat-vm.sh           the NAT'd guest lesson 5's gateway requires
-│   ├── 60-k8s.sh              k3s itself — the cluster lessons 6-9 all share
-│   ├── 70-k8s-gvisor.sh       runsc as a containerd runtime + RuntimeClass
-│   ├── 80-k8s-kata.sh         kata-deploy (a Helm chart as of Kata 4.0.0)
-│   ├── 90-k8s-openshell.sh    agent-sandbox controller + the OpenShell gateway
-│   └── 95-openshift-sno.sh    single-node OpenShift + sandboxed containers operator
-└── images/agent/              THE agent image: 4 frameworks + entrypoint + attack suite
+├── lessons.json                THE per-lesson hardware table — the only copy, read by lib.sh with
+│                               jq and by ctl.py with json. A lesson names EITHER its own hardware
+│                               or, with `box`, the machine it shares.
+├── substrates/                 all run ON the provisioned box, grouped by the chapter they build
+│   ├── chapter-2/              one host, four boundaries — one box per lesson
+│   │   ├── 10-podman.sh
+│   │   ├── 20-runsc.sh            gVisor
+│   │   ├── 30-containerd-kata.sh  containerd + nerdctl + kata-static
+│   │   ├── 40-openshell.sh        OpenShell (pinned)
+│   │   └── 50-nat-vm.sh           the NAT'd guest lesson 5's gateway requires
+│   └── chapter-3/              ALL FOUR install onto the ONE cluster lessons 6-9 share, in this
+│       │                       order: 70 is the only one that restarts k3s, and a restart after
+│       │                       80 or 90 undoes them.
+│       ├── 60-k8s.sh              k3s itself
+│       ├── 70-k8s-gvisor.sh       runsc as a containerd runtime + RuntimeClass
+│       ├── 80-k8s-kata.sh         kata-deploy (a Helm chart as of Kata 4.0.0)
+│       └── 90-k8s-openshell.sh    agent-sandbox controller + the OpenShell gateway
+├── openshift-sno/              chapter 4's cluster. NOT a substrate: its install REPLACES the
+│                               box's OS mid-flight, so it cannot run through up.sh's model and is
+│                               driven by its own install.sh from the workstation.
+├── report/                     scorecard -> report.html (stdlib only)
+└── images/agent/               THE agent image: 4 frameworks + entrypoint + attack suite
 ```
 
 `down.sh` is not housekeeping — it is what keeps this a sub-€1 tutorial. It works
@@ -513,6 +551,14 @@ kernel boundary on this ladder — a separate guest kernel in a separate VM — 
 6 exactly as open. A VM per container buys attack 8. It does not buy 2, 4, 5 or 6,
 and no amount of kernel isolation ever will: that distinction lives in HTTP.
 
+Its **Part 3b swaps the hypervisor under that runtime** — QEMU for **Firecracker**
+— and teaches the *mechanism*: Kata ships one shim binary, a config file picks the
+machine, and Firecracker additionally needs `--snapshotter devmapper` because it
+has virtio-block and no virtio-fs. The finding is deliberately a negative one and
+is measured rather than asserted: the suite runs again under Firecracker and **no
+row of the matrix moves**, so the score stays 7/13. What moves is the machine — no
+PCI bus, a block rootfs, and a VMM process weighing about half as much.
+
 **`lesson-05-container-openshell`** — the survivors that a container could only kill
 by killing all network, plus the one it could never kill. The motivating scenario
 is lesson 1's **web injection**, now made containable: a browsing agent *must* have
@@ -563,12 +609,22 @@ before the node does. The prior art measured a surprise worth preserving: the
 famous per-pod VM boot **did not dominate** — scheduling swamped it — so this lesson
 prints the number rather than asserting a tax. Verify the RuntimeClass name with
 `kubectl get runtimeclass` rather than hardcoding one: kata-deploy 4.0.0 registers
-**25** of them on this cluster (`kata-qemu`, `kata-clh`, `kata-fc`,
+**35** of them on this cluster (`kata-qemu`, `kata-clh`, `kata-fc`,
 `kata-qemu-runtime-rs`, the coco/snp/tdx/nvidia variants…), and which exist depends on
 the release and the node. `kata-qemu` is the one to want and it is present — the
 earlier note here said the obvious guess is wrong, and measurement on 2026-08-08
 contradicted that. Read the list anyway: a wrong name fails as *"RuntimeClass not
 found"*, which reads like a broken install rather than a stale assumption.
+
+**Part 3b then changes the same field to `kata-fc`** and teaches the half lesson 4
+cannot: the *selection*. Everything lesson 4 needed — a shim config, a snapshotter,
+a block device — collapses into one word in a pod spec. And it carries the sharper
+warning of the two: **`kata-fc` was in that list of 35 from the day Kata was
+installed and never worked**, because Firecracker needs storage nobody had
+configured (`snapshotter must be provided to unpack`). Registered is not working,
+which is this repo's characteristic failure wearing a RuntimeClass. The suite runs
+a second time under Firecracker and the matrix comes back identical, so the score
+stays **14/19**.
 
 **`lesson-09-k8s-openshell`** — OpenShell's kubernetes driver on the Agent Sandbox
 controller. Two constraints that produce confusing failures if unknown: a gateway
@@ -691,7 +747,83 @@ is run.
 
 Measured, not assumed. Re-verify before contradicting any of it.
 
+### Two hypervisors under Kata (2026-08-13) — and the VMM is not the boundary
+
+Lesson 4 on a fresh `PLAY2-MICRO`, node kernel `6.8.0-106-generic`, kata-static `4.0.0`
+(Firecracker `v1.12.1`). The whole suite ran twice, once per hypervisor:
+
+```text
+attack matrix        kata-qemu 7/13   kata-fc 7/13   — 13 rows, NOT ONE different
+```
+
+That tie is the finding, and it is why Firecracker is **not** a rung on the ladder. What
+the two do not share is the machine, read from inside the guest:
+
+| Reading | `kata-qemu` | `kata-fc` |
+| :-- | :-- | :-- |
+| `uname -r` | `6.18.35` | `6.18.35` — identical, so the kernel test cannot separate them |
+| `/sys/bus/pci/devices` | 11 | **0** — `pci=off`; virtio arrives over MMIO |
+| rootfs filesystem | `virtiofs` | `ext4` — a block device, which is *why* devmapper is needed |
+| start, do-nothing container, min of 3 | 3.18 s | 2.79 s (**0.88×**) |
+| VMM process while a sandbox is up | 262.1 MB | **148.3 MB** RSS |
+| VMM on disk | 73.4 MB + 320.7 MB firmware | **2.9 MB** |
+
+**The lightness claim reproduces on memory and on disk, and only modestly on speed** —
+0.4 s on the shortest path either hypervisor has. Plan around the memory.
+
+> [!warning]
+> **A `containerd-shim-kata-fc-v2` symlink silently runs QEMU.** As of Kata 4.0.0 the shim
+> ignores its own binary name, and `KATA_CONF_FILE` is allow-listed to the two *shipped*
+> config paths. Measured here: the symlink booted QEMU under the Firecracker runtime name
+> and reported a convincing guest kernel while doing it. Only the empty PCI bus caught it,
+> which is why both the lesson and `check.sh` assert on that and never on the runtime name.
+
 ### Chapter 3 runs on single-node k3s (2026-08-08) — all four rungs green
+
+> [!important]
+> **The BOXES below are superseded; the SCORES are not.** As of 2026-08-13 lessons 6–8 share one
+> cluster (`chapter-03-k8s`, a `PLAY2-MICRO` carrying `60`/`70`/`80`) and lesson 9 keeps its own.
+> The table below is the four-separate-boxes run, kept because it is what was measured that day —
+> and because its scores are now the **regression baseline**: the shared cluster has to reproduce
+> 14/16/14, and a rung that moves means the sharing changed a boundary and must be explained
+> rather than accepted.
+>
+> **What the shared cluster settled (measured 2026-08-13):** gVisor and Kata *do* coexist on one
+> k3s node. One `kubectl get runtimeclass` showed `gvisor` beside `kata-qemu` and its ~18 variants,
+> and three different kernels answered from inside on that single node — `6.8.0-106-generic` to a
+> plain pod, `4.19.0-gvisor` under `runtimeClassName: gvisor`, guest `6.18.35` under `kata-qemu`.
+> Installing Kata did **not** make it the default runtime, so lesson 6's baseline claim survives.
+> Lessons 6, 7 and 8 each reproduced their separate-box scores exactly (14, 16, 14 of 19).
+>
+> **What it also settled, the hard way: 8 GB does not hold all four.** With `90-k8s-openshell`
+> installed too, the gateway and Agent Sandbox controller stay resident, and lesson 8's Part 3b —
+> repeated Kata guest boots to time the VM tax — took the whole box down mid-run (ssh dropped;
+> lesson 9 could not reach it at all). Lesson 8 had passed that same Part 3b on an 8 GB box
+> carrying `60`+`80` and no gateway, which is what points at memory. Hence the 6–8 / 9 split.
+>
+> **A FOURTH boundary joined that node on 2026-08-13: `kata-fc`.** Substrate `75-k8s-devmapper`
+> adds the devmapper snapshotter — between `70` and `80`, because loading a snapshotter needs
+> containerd restarted and nothing may restart k3s after kata-deploy. `kata-fc` had been in the
+> RuntimeClass list since Kata was installed and had never worked; a pod naming it died with
+> `snapshotter must be provided to unpack`. Registered is not working. Measured with it in place:
+> **`kata-qemu` 14/19 and `kata-fc` 14/19, all 19 rows identical**, guest `6.18.35` under both, and
+> the two separable only from inside by the PCI bus (11 devices vs **0**) and the rootfs
+> (`virtiofs` vs `ext4`). VMM RSS on the node: 269.7 MB vs **161.5 MB**, reproduced within 2 MB
+> across two runs. Lessons 6 and 7 reproduced 14 and 16 of 19 beside it.
+>
+> **The boot advantage does NOT survive to Kubernetes, and the lesson says so.** Lesson 4 measures
+> Firecracker ~0.4 s ahead of QEMU through `nerdctl run`, every time. Here two runs on the same
+> cluster put `kata-fc` at 5.75 s and 6.80 s against `kata-qemu`'s steady 6.66 s and 6.73 s — the
+> difference is inside the noise of a pod round trip, because `time_pod_startup` deliberately
+> measures apply → terminal phase and scheduling swamps the VM boot. That is the prior art's
+> finding reproduced, not a regression.
+>
+> **A bigger box is not available on this account.** `POP2-4C-16G`, `PRO2-XS`, `BASIC3-X4C-16G`
+> and `BASIC3-X6C-24G` all fail to create with `has reached its quota (0/0)`, and `PLAY2-MICRO`
+> is the largest `PLAY2`. The catalogue's `availability: available` describes the *offer*, not this
+> account's quota, and this `scw` build has no `account quota` subcommand to check beforehand — so
+> any type outside `PLAY2` costs a failed provision to discover. **If that quota is ever raised,
+> putting all four back on one node is a two-line change** in `infra/lessons.json`.
 
 Four throwaway VMs, `fr-par-1`, Ubuntu 24.04, k3s `v1.36.3+k3s1` (containerd
 `2.3.2-k3s2`), node kernel `6.8.0-106-generic` — the same kernel lessons 1–4 recorded,
@@ -883,7 +1015,7 @@ metal has no L0, so `/dev/kvm` and vsock are simply the machine's own.
 | MLflow, Langfuse, any observability stack | This tutorial is about sandboxing. Results are JSON files and a rendered table. |
 | Tool-level sandboxing as a track | Named in lesson 1; building it too would double the tutorial and break the controlled comparison. The prior-art repo has it. |
 | gVisor on OpenShift | Not a supported OpenShift runtime; it would mean hand-installing `runsc` on RHCOS via MachineConfig. Chapter 4 teaches what OpenShift ships — Kata. |
-| Firecracker | A **VMM**, one layer below an OCI runtime — never a `--runtime` value. Reachable only as `hypervisor = firecracker` under Kata, which additionally needs the devmapper snapshotter. Documented in lesson 4, not demonstrated. |
+| Cloud Hypervisor (`kata-clh`) | The third VMM in Kata's hypervisor slot, and kata-static ships it. Lessons 4 and 8 already demonstrate that the slot exists by running QEMU and Firecracker in it; a third would be a longer table making the same point. |
 | Docker | Podman does everything except Kata, which needs containerd. No lesson requires Docker. |
 | Escape techniques against anything real | The rogue agent attacks **only the lesson's own disposable box**, with planted fake credentials and our own listener. Nothing outside is ever a target. |
 | Confidential Containers, peer pods | The attestation and cloud extensions of the Kata path. Named in lesson 12, scoped out. |
