@@ -4,6 +4,9 @@
 **Targets:** `tutorial/lesson-04-container-kata`, `tutorial/lesson-08-k8s-kata`,
 `tutorial/lesson-12-openshift-kata` (docs only), `infra/`, `docs/`
 **Written:** 2026-08-13
+**Revised:** 2026-08-13 — review findings folded in: line anchors re-verified against the tree,
+lesson 4's probes specified (§5.1), the `check.sh` case split corrected (§5.1), the
+`docs/isolation-layers.md` rewrite added to scope (§5.4), upstream issue status corrected (§8)
 
 ---
 
@@ -45,7 +48,7 @@ Three repo rules that will bite you if you skip them:
 
 ## 1. Context — why this change
 
-`syllabus.md:886` currently lists Firecracker under **Deliberately out of scope**:
+`syllabus.md:943` currently lists Firecracker under **Deliberately out of scope**:
 
 > *A VMM, one layer below an OCI runtime — never a `--runtime` value. Reachable only as
 > `hypervisor = firecracker` under Kata, which additionally needs the devmapper snapshotter.
@@ -147,11 +150,12 @@ The two rungs solve it differently, and **lesson 4's way is simpler**:
 | **Lesson 4** — host containerd + `nerdctl` | `nerdctl` accepts `--snapshotter devmapper` **per run**. QEMU keeps overlayfs; Firecracker asks for devmapper at the point of use. No per-runtime config needed |
 | **Lesson 8** — k3s containerd | needs a **per-runtime snapshotter** in containerd's config so `kata-qemu` stays on overlayfs while `kata-fc` gets devmapper. containerd `2.3.2-k3s2` supports this |
 
-On the k8s side there is a second wrinkle: kata-deploy registers ~25 RuntimeClasses including
-`kata-fc` (`syllabus.md:566`), so **`kata-fc` already exists on that cluster and simply does not
-work**. A pod using it fails at creation with a snapshotter error.
+On the k8s side there is a second wrinkle: kata-deploy registers **25** RuntimeClasses including
+`kata-fc` (`syllabus.md:595`, also recorded at `docs/isolation-layers.md:330`), so **`kata-fc`
+already exists on that cluster and simply does not work**. A pod using it fails at creation with a
+snapshotter error.
 
-**Registered ≠ working.** This is the same class of failure `infra/check.sh:252` already guards
+**Registered ≠ working.** This is the same class of failure `infra/check.sh:260` already guards
 against for gVisor (*"the RuntimeClass was accepted and runc ran anyway, the silent fallback"*).
 
 ---
@@ -209,14 +213,14 @@ cd infra && ./up.sh chapter-03-k8s && ./ssh.sh chapter-03-k8s
 Firecracker uses **virtio over MMIO and has no PCI bus at all**; Kata's QEMU config uses
 **virtio-PCI**. So from inside the guest:
 
-```
+```text
 kata-qemu  →  /sys/bus/pci/devices/  populated
 kata-fc    →  /sys/bus/pci/devices/  empty, /sys/devices/platform/*.virtio_mmio present
 ```
 
 This is expected but **unverified**. It matters because this repo's core rule is *assert the boundary
 from inside the sandbox, never from the flag you passed*. DMI cannot substitute — measured here,
-neither `kata-clh` nor `kata-qemu` exposes `/sys/class/dmi` at all (`infra/check.sh:283`,
+neither `kata-clh` nor `kata-qemu` exposes `/sys/class/dmi` at all (`infra/check.sh:289`,
 `lesson-08-k8s-kata/main.py:204`).
 
 > **If the discriminator does not hold, STOP.** Do not ship either lesson until you find a
@@ -257,8 +261,15 @@ snapshotter in host containerd's config, and installs the Firecracker shim so
 
 #### `infra/check.sh`
 
-Extend the existing `30-containerd-kata` case with a `kata-fc` assertion: a container under the fc
-runtime runs at all, its guest kernel ≠ node kernel, and **`/sys/bus/pci/devices` is empty**.
+**New case `35-containerd-devmapper`** — do *not* extend the `30-containerd-kata` case. `check.sh`
+dispatches on the box's substrate list, so an fc assertion inside case 30 would fire on any box
+carrying 30 without 35; a new case keeps the assertion attached to the substrate that provides the
+capability, and mirrors what §5.2 already does for substrate 75. Timing is not a concern either
+way: `check.sh` runs **once, after all substrates** (`infra/up.sh:161-163`), so substrate 35 has
+finished before any case fires.
+
+The case asserts: a container under the fc runtime runs at all, its guest kernel ≠ node kernel,
+and **`/sys/bus/pci/devices` is empty**.
 
 #### `tutorial/lesson-04-container-kata/main.py`
 
@@ -268,9 +279,27 @@ runtime runs at all, its guest kernel ≠ node kernel, and **`/sys/bus/pci/devic
   already — reuse them rather than writing new launchers.
 - Add a **Part 3b** banner carrying the three axes. Lesson 4 has no 3b today; its banners run
   Part 1 (372) → Part 2 (381) → assertions (388/395/398) → Part 3 (401) → Part 4 (414).
-  `tutorial/lesson-08-k8s-kata/main.py` has the 3b pattern to copy.
-- **Keep the fixed four-part shape — no Part 5.** Keep `main.py` under ~200 lines; extract helpers
-  into a sibling module *in the same leaf* if needed — **never** a shared package.
+  `tutorial/lesson-08-k8s-kata/main.py` has the 3b pattern to copy. What Part 3b measures:
+
+  | Axis | Probe | Where it runs |
+  |:--|:--|:--|
+  | Capabilities | PCI bus vs virtio-MMIO: `/sys/bus/pci/devices/` populated vs empty, `/sys/devices/platform/*.virtio_mmio` present | inside the guest, via `guest_exec()` |
+  | Speed | wall-clock of a do-nothing `nerdctl run --rm`, **min of 3**, one row per runtime: `runc` / `kata-qemu` / `kata-fc` — mirror lesson 8's three-row Part 3b, and follow `k8s.py:250`'s min-of-3 rationale | on the box |
+  | Efficiency | VMM process RSS while a container of each hypervisor is up — find the `qemu-system-*` / `firecracker` process and read its RSS from `/proc`. Also weigh each VMM **on disk** as kata-static ships them side by side in `/opt/kata/bin`: the `firecracker` binary against `qemu-system-*` plus the firmware blobs it loads — the cheapest, most vivid face of the lightweightness claim, measured rather than quoted | on the box; `main.py` runs there, so `/proc` and `/opt/kata` are directly readable |
+
+  This is where §1 expects the boot advantage to show most cleanly: the `nerdctl run` path is far
+  shorter than lesson 8's apply → terminal-phase round trip, with no scheduler or kubelet loop to
+  swamp it.
+
+- **`kata.save(...)`** — add `startup_s_runc`, `startup_s_kata_qemu`, `startup_s_kata_fc`,
+  `vmm_rss_mb_qemu`, `vmm_rss_mb_fc`. `Card.save(**meta)` passes arbitrary fields through to
+  `results/lesson-04.json` and the reports, so nothing in `infra/report/` needs touching. (These
+  names carry explicit `_qemu`/`_fc` suffixes because both are new; lesson 8's pre-existing
+  `startup_s_kata` keeps its shorter name — see §5.2.)
+- **Keep the fixed four-part shape — no Part 5.** `main.py` is already ~450 lines with
+  `scorecard.py` as its sibling module — the repo's ~200-line guideline is not a refactor mandate
+  here, so do **not** shrink the file to meet it. New helpers go in a sibling module *in the same
+  leaf* — **never** a shared package.
 - **Lines 429-430** print *"Firecracker, for the record, is a VMM one layer BELOW an OCI runtime …
   reachable only as `hypervisor = firecracker` under Kata."* Still true, but the "for the record"
   framing is stale once this lesson demonstrates it. Rewrite it. (An earlier draft of this spec
@@ -315,8 +344,9 @@ account (POP2-4C-16G, PRO2-XS, BASIC3-X4C-16G, BASIC3-X6C-24G all checked), and 
 - **Extend the `80-k8s-kata` case** with a `kata-fc` assertion mirroring the `kata-qemu` shape
   already there: the pod runs, guest kernel ≠ node kernel (fail with the existing "the shim fell
   back" message if equal), and `/sys/bus/pci/devices` is empty.
-- Read class names from the cluster; never hardcode. Follow the precedence logic at
-  `check.sh:260-270`.
+- Read class names from the cluster; never hardcode. Follow the precedence logic in the
+  `80-k8s-kata` case (`check.sh:266-277` — prefer the exact class, fall back to the first
+  `kata*`, and the comment there explains why sort order would be a real hole).
 
 #### `tutorial/lesson-08-k8s-kata/`
 
@@ -337,7 +367,12 @@ no PCI, no ACPI.
   matrix** and that this *is* the finding, tying back to the chapter's refrain *read the matrix,
   never the count*.
 - **`k8s.py`** — add `vmm_footprint()`; reuse `time_pod_startup()` as-is (min-of-3, already correct).
-- **`card.save(...)`** — add `startup_s_kata_fc`, `vmm_rss_mb_qemu`, `vmm_rss_mb_fc`.
+- **`card.save(...)`** — add `startup_s_kata_fc`, `vmm_rss_mb_qemu`, `vmm_rss_mb_fc`. The
+  existing qemu figure is named `startup_s_kata` (`main.py:371`) and **keeps that name — do not
+  rename it to match**. Nothing downstream reads field names (`Card.save(**meta)` passes them
+  through verbatim and `infra/report/` hardcodes none), so the rename would be churn with no
+  consumer; the slight asymmetry against lesson 4's `startup_s_kata_qemu` is deliberate and
+  cheaper than a tidy-up.
 - **`README.md`** — new sections and sample output; link `docs/isolation-layers.md`.
 
 ### 5.3 Lesson 12 — documentation only, so the limitation is obvious
@@ -362,9 +397,23 @@ Write that down where a reader meets it:
 
 ### 5.4 `syllabus.md` and `docs/`
 
-- **Remove** the Firecracker row from *Deliberately out of scope* (line 886).
-- Update the **chapter 2 lesson-4** and **chapter 3 lesson-8** entries, and § *Engine policy*.
+- **Remove** the Firecracker row from *Deliberately out of scope* (line 943).
+- Update the **chapter 2 lesson-4** and **chapter 3 lesson-8** entries, and § *Engine policy*
+  (line 357).
 - Add measured numbers to § *Verified on this hardware* **after** both runs are green.
+
+`docs/isolation-layers.md` also carries prose this change makes false — the OpenShift note in §5.3
+is **not** the only edit it needs:
+
+- **Line 322**, the section headed *"Why Firecracker is documented but never demonstrated here"*,
+  concludes *"…this tutorial documents it and demonstrates `kata-qemu` instead."* Both the heading
+  and that conclusion become false the moment this ships — and both lessons **link to this doc**,
+  so a reader lands on the contradiction directly. Rewrite the section: Firecracker is demonstrated
+  in lessons 4 and 8, the devmapper requirement is now a built substrate rather than the reason for
+  scoping out, and the mechanism/selection split (§1) says which lesson teaches what.
+- **Line 389**, in § *Where this came from*, cites `tutorial/lesson-04-container-kata/README.md` as
+  *"the Firecracker scoping note"* — stale once the scoping note moves out of that README (§5.1).
+  Repoint it at what the README then actually contributes.
 
 > `syllabus.md` is the source of truth and changing it normally needs sign-off. **This spec is that
 > sign-off**, for these edits only. **Do not change the lesson list or its ordering.**
@@ -405,6 +454,8 @@ their own boxes and do not carry substrate 30 or 35, so nothing there can be aff
 - [ ] Lessons 6 and 7 still green on the shared node
 - [ ] Both READMEs match what the runs actually printed
 - [ ] Lesson 12's README and `docs/isolation-layers.md` state the QEMU-only limitation
+- [ ] `docs/isolation-layers.md` no longer claims Firecracker is *"never demonstrated here"*, and
+      its § *Where this came from* list matches what lesson 4's README now contributes (§5.4)
 - [ ] `nvim-tools --json --all` adds no findings versus the baseline taken before you started
 - [ ] **Account verified empty** — against the account, not the scripts' output:
 
@@ -437,7 +488,7 @@ their own boxes and do not carry substrate 30 or 35, so nothing there can be aff
 |:--|:--|:--|
 | **Disk** | Kata alone measured 9.3 GB; a Scaleway VM's default root is 8 GB usable and `kata-static` has died mid-tar with `No space left on device` before. The chapter-3 volume also carries runsc and the agent image | 40 → 60 GB (lesson 4), 60 → 80 GB (chapter 3). If a pool still does not fit, **shrink the pool** — larger VM types are quota 0/0 |
 | **The post-80 restart trap** | Any devmapper change needing a containerd restart *after* kata-deploy silently reverts Kata, and the cluster then looks broken for unrelated reasons | Substrate numbered 75; §4 question 5 designs this out instead of discovering it |
-| **`kata-fc` broken upstream** | It may be non-functional in kata-deploy 4.0.0 rather than merely unconfigured. There is a live upstream issue on exactly this combination — *"firecracker install working, devmapper issues"*, [kata-containers#12558](https://github.com/kata-containers/kata-containers/issues/12558). **Read it before starting §5.2** | Report it. Do not work around it and do not fake a result |
+| **`kata-fc` broken upstream** | It may be non-functional in kata-deploy 4.0.0 rather than merely unconfigured. There is a **closed** upstream issue on exactly this combination — *"Can't get kata/containerd/firecracker install working, devmapper issues"*, [kata-containers#12558](https://github.com/kata-containers/kata-containers/issues/12558) (verified 2026-08-13: exists, closed). **Read its resolution before starting §5.2** — a closed-fixed issue may be the recipe rather than the blocker | If it still reproduces, report it. Do not work around it and do not fake a result |
 | **The "lighter" claim not reproducing** | Lesson 8's startup figure can be swamped by scheduling; guest RAM is identical by construction | §1 — print the flat number and explain it. Never tune the method until it agrees |
 | **Memory on the k3s node** | The 8 GB node was previously taken down by lesson 8's repeated Kata boots when an OpenShell gateway was also resident | Lesson 9 keeps its own box; do not add `90-k8s-openshell` to this node |
 | **Two rungs now cost two boxes** | Every future Firecracker change must re-verify lesson 4 as well as chapter 3 | Accepted deliberately — see §9 |
