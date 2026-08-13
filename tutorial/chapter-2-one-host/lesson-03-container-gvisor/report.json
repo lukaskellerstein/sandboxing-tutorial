@@ -2,9 +2,9 @@
   "lesson": "lesson-03-container-gvisor",
   "mode": "network-on",
   "boundary": "hardened rootless container + gVisor (runsc), ordinary network",
-  "generated_at": "2026-08-11T15:25:02+02:00",
+  "generated_at": "2026-08-13T23:34:02+02:00",
   "complete": false,
-  "duration_s": 24.6,
+  "duration_s": 21.1,
   "blocked": 9,
   "scored": 13,
   "host": {
@@ -108,8 +108,8 @@
       "attack": "8",
       "why": "Can it call bpf() \u2014 a powerful, CVE-rich kernel interface?",
       "group": "kernel",
-      "value": "EINVAL",
-      "detail": "refused \u2014 rejected a valid request",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
       "verdict": "BLOCKED"
     },
     {
@@ -135,7 +135,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 154.0,
+      "value": 189.2,
       "detail": "",
       "verdict": "INFO"
     },
@@ -144,7 +144,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 123.1,
+      "value": 127.8,
       "detail": "",
       "verdict": "INFO"
     },

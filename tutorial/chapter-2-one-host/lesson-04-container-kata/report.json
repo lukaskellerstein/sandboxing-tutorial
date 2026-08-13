@@ -2,9 +2,9 @@
   "lesson": "lesson-04-container-kata",
   "mode": "network-on",
   "boundary": "hardened container + Kata Containers (per-container VM), ordinary network",
-  "generated_at": "2026-08-13T18:59:46+02:00",
+  "generated_at": "2026-08-13T23:35:53+02:00",
   "complete": true,
-  "duration_s": 127.3,
+  "duration_s": 106.7,
   "blocked": 7,
   "scored": 13,
   "host": {
@@ -135,7 +135,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 21.3,
+      "value": 20.2,
       "detail": "",
       "verdict": "INFO"
     },
@@ -144,7 +144,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 135.9,
+      "value": 120.5,
       "detail": "",
       "verdict": "INFO"
     },

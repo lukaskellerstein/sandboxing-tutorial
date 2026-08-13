@@ -2,15 +2,15 @@
   "lesson": "lesson-05-container-openshell",
   "mode": "network-on",
   "boundary": "ordinary runc + OpenShell policy (per-binary, method-aware) + OCSF audit",
-  "generated_at": "2026-08-11T16:00:22+02:00",
+  "generated_at": "2026-08-13T23:44:21+02:00",
   "complete": true,
-  "duration_s": 93.6,
+  "duration_s": 83.4,
   "blocked": 16,
   "scored": 19,
   "host": {
     "engine": "openshell",
     "node_kernel": "6.12.101+deb13-cloud-amd64",
-    "openshell_version": "openshell 0.0.102"
+    "openshell_version": "openshell 0.0.105"
   },
   "findings": [
     {
@@ -180,7 +180,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 54.6,
+      "value": 51.1,
       "detail": "",
       "verdict": "INFO"
     },
@@ -189,7 +189,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 123.8,
+      "value": 130.4,
       "detail": "",
       "verdict": "INFO"
     },

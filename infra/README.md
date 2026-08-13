@@ -6,19 +6,26 @@ backdoor, installs a package that executes code at install time, and exhausts re
 Those are real side effects, and they are only acceptable on a machine that is deleted
 minutes later.
 
-Usually that box is the lesson's own. **Two chapters instead share one**, and a lesson says
-so by carrying `box` in `lessons.json` instead of hardware:
+The topology is **one shared box per chapter** (2026-08-13), and a lesson says so by
+carrying `box` in `lessons.json` instead of hardware:
 
 | Chapter | Box | Why it shares | Who tears it down |
 | :-- | :-- | :-- | :-- |
-| 3 (lessons 6–**8**) | `chapter-03-k8s` | So every runtime a workload can select is installed at once and each lesson's `runtimeClassName` is a real choice | an EXIT trap, as everywhere else |
+| 1 (lesson 1) | its own | a one-lesson chapter *is* one box | an EXIT trap, as everywhere else |
+| 2 (lessons 2–4) | `chapter-02-host` | crun, runsc and Kata installed side by side, so each lesson's `--runtime` is a real choice | an EXIT trap, as everywhere else |
+| 3 (lessons 6–9) | `chapter-03-k8s` | every runtime a workload can select is installed at once and each lesson's `runtimeClassName` is a real choice | an EXIT trap, as everywhere else |
 | 4 (lessons 10–13) | `openshift-sno` | Installing single-node OpenShift takes longer than a lesson does | **you**, and nothing else will |
 
-**Lesson 9 keeps its own box.** OpenShell is the one chapter-3 boundary not chosen with
-`runtimeClassName` — its sandboxes take that from the gateway — so it was never part of the menu
-the shared cluster exists to show, and its resident gateway is what pushed an 8 GB node over during
-lesson 8's repeated Kata guest boots. `infra/lessons.json` records the measurement and the account
-quota ceiling that ruled out simply buying a bigger box.
+**Lesson 5 is the one exception and keeps its own box.** OpenShell's rootless-podman driver
+needs a genuinely private primary address on the default-route interface, which no Scaleway box
+has — so lesson 5's box builds a NAT'd Debian-13 guest and `up.sh` re-points the whole box inside
+it, terminally. A box relocated like that cannot also host lessons 2–4. `chapter-02-host`'s `why`
+in `lessons.json` records the constraint and the rejected alternatives.
+
+(Lesson 9 briefly kept its own box too: its resident gateway pushed an 8 GB node over during
+lesson 8's repeated Kata guest boots, and every bigger VM type was quota `0/0`. That quota was an
+identity gate, since lifted — on the 32 GB `PRO2-S` the gateway coexists with the Kata boots,
+measured 2026-08-13.)
 
 `lesson_box()` in `lib.sh` is the one place that resolves it, and every driver calls it
 before touching state, ssh or rsync. `./down.sh lesson-06-k8s` therefore **refuses**: the
@@ -89,10 +96,8 @@ while the lesson believes it got another.
 | Lesson | Box | Root vol | €/hr | Why that box |
 |:--|:--|:--|--:|:--|
 | 1 no-sandbox | `PLAY2-NANO` VM | 20 GB | 0.028 | the bare box *is* the lesson |
-| 2 container | `PLAY2-NANO` VM | 20 GB | 0.028 | rootless podman on this VM's own kernel |
-| 3 gvisor | `PLAY2-NANO` VM | 20 GB | 0.028 | `runsc` is user-space; no hardware feature needed |
-| 4 kata | `PLAY2-MICRO` VM | **40 GB** | 0.055 | needs `/dev/kvm` **and** `/dev/vhost-vsock`, which this VM has |
-| 5 openshell | `PLAY2-MICRO` VM | 40 GB | 0.055 | OpenShell refuses a public default-route IP, so the box builds a NAT'd guest |
+| 2 container, 3 gvisor, 4 kata | `chapter-02-host`: a `PRO2-XS` VM | **60 GB** | 0.112 | one shared host carrying crun + runsc + kata-qemu + kata-fc side by side; needs `/dev/kvm` **and** `/dev/vhost-vsock`, which this VM has. 60 GB for the 9.3 GB Kata stack + the devmapper thin-pool ceiling |
+| 5 openshell | `PLAY2-MICRO` VM | 40 GB | 0.055 | OpenShell refuses a public default-route IP, so the box builds a NAT'd guest — which re-points the whole box and is why this lesson cannot share the host above |
 
 **VM, not bare metal — and that was measured rather than assumed.** Lessons 1–3 used
 to take Elastic Metal on the argument that only metal makes "a container shares
@@ -136,9 +141,10 @@ box remains genuine bare metal — `"kind": "baremetal"` in `lessons.json` route
 
 ## Cost
 
-Roughly **€0.19/hr** with all five boxes up at once, and a lesson occupies its box
-for well under an hour — so the whole chapter is well under a euro, *provided
-`down.sh` runs*. `up.sh` prints the running rate, read live from the Scaleway
+Roughly **€0.42/hr** with all four of chapters 1–3's boxes up at once (`lesson-01` +
+`chapter-02-host` + `lesson-05` + `chapter-03-k8s` — and usually only one of them is), and
+a lesson occupies its box for well under an hour — so a whole chapter is around a euro,
+*provided `down.sh` runs*. `up.sh` prints the running rate, read live from the Scaleway
 catalogue rather than from a hardcoded table that can quietly go stale.
 
 **Isolation is structural.** A single `./down.sh <lesson>` terminates EXACTLY its own
@@ -226,8 +232,8 @@ infra/
 ├── tui/                     the optional Ink panel — a client of ctl.py, the only Node here
 ├── openshift-sno/           the chapter-4 cluster: install.sh + its runbook and traps
 ├── substrates/              one script per boundary, run ON the box, grouped by chapter
-│   ├── chapter-2/           10..50 — one box per lesson
-│   └── chapter-3/           60..90 — onto the one cluster lessons 6-8 share
+│   ├── chapter-2/           10..35 — onto the one host lessons 2-4 share; 40+50 — lesson 5's own box
+│   └── chapter-3/           60..90 — onto the one cluster lessons 6-9 share
 ├── report/                  scorecard -> report.html (stdlib only, no deps)
 └── images/agent/            the one image every lesson runs
 ```

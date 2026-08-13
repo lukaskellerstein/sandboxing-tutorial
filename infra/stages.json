@@ -207,10 +207,12 @@
     "chapter-2/10-podman": 90,
     "chapter-2/20-runsc": 60,
     "chapter-2/30-containerd-kata": 600,
+    "chapter-2/35-containerd-devmapper": 10,
     "chapter-2/40-openshell": 300,
     "chapter-2/50-nat-vm": 600,
     "chapter-3/60-k8s": 120,
     "chapter-3/70-k8s-gvisor": 90,
+    "chapter-3/75-k8s-devmapper": 8,
     "chapter-3/80-k8s-kata": 600,
     "chapter-3/90-k8s-openshell": 420
   },

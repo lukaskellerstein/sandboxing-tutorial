@@ -20,6 +20,13 @@ description: Project configuration — architecture, paths, dev environment
 > cluster, so `tutorial/chapter-4-openshift/lesson-1N-*/run.sh` neither provisions nor destroys, and the
 > teardown (`infra/down.sh openshift-sno`) is a step a human owns. Nothing will do it
 > for you, and the box is €0.263/hr.
+>
+> **The box topology is one shared box per chapter as of 2026-08-13**: lessons 2–4 share
+> `chapter-02-host` (PRO2-XS), lessons 6–9 share `chapter-03-k8s` (PRO2-S), lesson 5 keeps
+> its own box by hard constraint (OpenShell's NAT-guest re-point), and chapters 1 and 4
+> were already one box each. Shared-lesson `run.sh` still provisions and destroys — the
+> chapter box, via an EXIT trap — and `infra/chapter-02.sh` / `chapter-03.sh` amortize the
+> build across each chapter. `CLAUDE.md` § at a glance carries the measured detail.
 
 - **Project**: sandboxing-tutorial — a hands-on tutorial on sandboxing agentic
   workloads: running an AI agent and the code it generates behind a real
@@ -32,8 +39,9 @@ description: Project configuration — architecture, paths, dev environment
 - **Build**: nothing is built. `uv sync` in a leaf resolves that leaf's
   dependencies against its own `.venv`.
 - **Run a lesson**: `cd tutorial/<chapter>/<lesson> && ./run.sh` — for lessons 01–09 that
-  provisions its Scaleway VM, runs the lesson there, destroys the box (including on
-  failure), and writes `report.html` + `report.json` beside the lesson.
+  provisions its Scaleway VM (the shared chapter box, where the lesson carries `box`),
+  runs the lesson there, destroys the box (including on failure), and writes
+  `report.html` + `report.json` beside the lesson.
   **Lessons 10–13 are the exception**: they run against the one shared OpenShift
   cluster and neither provision nor destroy it.
 - **Test**: no repo-wide suite. That same command *is* the test: provision → run →

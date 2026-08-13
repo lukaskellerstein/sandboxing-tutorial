@@ -27,8 +27,9 @@ interesting, and occasionally surprising.
 
 ## Where this runs
 
-**On a disposable Linux box, provisioned per lesson and destroyed after** — not on
-your laptop. That is deliberate, and measured:
+**On a disposable Linux box, provisioned per lesson — or one per chapter, where its
+lessons share — and destroyed after**, not on your laptop. That is deliberate, and
+measured:
 
 - On macOS a "plain container" is **already inside a VM you did not ask for and the
   lesson never mentions**, so the baseline of the ladder is stronger than the lesson
