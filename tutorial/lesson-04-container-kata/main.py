@@ -103,7 +103,7 @@ def preflight() -> list[str]:
     if not Path("/dev/vhost-vsock").exists():
         problems.append("/dev/vhost-vsock is absent — the Kata runtime talks to its agent over vsock")
     if shutil.which("nerdctl") is None:
-        problems.append("nerdctl is not installed — run infra/substrates/30-containerd-kata.sh")
+        problems.append("nerdctl is not installed — run infra/substrates/chapter-2/30-containerd-kata.sh")
 
     if problems:
         sys.exit("  Kata preflight failed:\n" + "\n".join(f"    - {p}" for p in problems))

@@ -15,6 +15,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/lib.sh"
 
 LESSON="${1:?usage: ./check.sh <lesson>}"
+# Every assertion below interrogates a MACHINE, so resolve to the box up front and use only that.
+# `./check.sh lesson-07-k8s-gvisor` and `./check.sh chapter-03-k8s` must prove the same things,
+# because on a shared chapter they are the same node — and the substrate list they dispatch on
+# belongs to the box, so a four-substrate cluster asserts all four boundaries whichever name you use.
+BOX=$(lesson_box "${LESSON}")
 ALPINE=docker.io/library/alpine:3.22
 #: Chapter 3's pod image — the same agent image, side-loaded onto the node by 60-k8s.sh. NOT :latest,
 #: for the reason images/agent/import-k3s.sh spells out.
@@ -145,13 +150,17 @@ YAML"
   fi
 }
 
-NODE_KERNEL=$(box_ssh "${LESSON}" 'uname -r')
+NODE_KERNEL=$(box_ssh "${BOX}" 'uname -r')
 echo "    node kernel: ${NODE_KERNEL}"
 
-for sub in $(lesson_substrates "${LESSON}"); do
-  case "${sub}" in
+for sub in $(lesson_substrates "${BOX}"); do
+  # Substrates are named by chapter now (`chapter-3/60-k8s`), because chapter 3's four all land on
+  # one shared cluster and the grouping is what makes that set legible. Match on the BASENAME so
+  # every arm below stays the plain substrate name: the chapter a script lives in is a fact about
+  # the tree, never about what the assertion has to prove.
+  case "${sub##*/}" in
     10-podman)
-      got=$(box_ssh "${LESSON}" "podman run --rm --network none ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
+      got=$(box_ssh "${BOX}" "podman run --rm --network none ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       if [ "${got}" = "${NODE_KERNEL}" ]; then
         pass "podman: container runs on the NODE kernel (${got}) — correct, a container is not a kernel boundary"
       else
@@ -164,7 +173,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # cgroup manager gets "Interactive authentication required" from the system D-Bus, and the
       # cgroupfs manager cannot write /sys/fs/cgroup/cgroup.subtree_control. Lesson 3 runs rootful
       # for the same reason, on BOTH runtimes, so its one-variable comparison still holds.
-      got=$(box_ssh "${LESSON}" "sudo podman run --rm --network none --runtime runsc ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
+      got=$(box_ssh "${BOX}" "sudo podman run --rm --network none --runtime runsc ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       case "${got}" in
         *gvisor*) pass "gVisor: sandbox reports its OWN kernel (${got}), not the node's" ;;
         "${NODE_KERNEL}") fail "gVisor: sandbox reports the NODE kernel (${got}) — runsc did NOT engage, this is the silent fallback" ;;
@@ -173,7 +182,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       ;;
 
     30-containerd-kata)
-      got=$(box_ssh "${LESSON}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
+      got=$(box_ssh "${BOX}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       if [ "${got}" = "FAILED" ] || [ -z "${got}" ]; then
         fail "Kata: could not run a container under io.containerd.kata.v2"
       elif [ "${got}" = "${NODE_KERNEL}" ]; then
@@ -183,7 +192,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       fi
       # Kernel string alone is not proof on RHEL-family hosts (Red Hat builds the guest kernel from
       # the same base). DMI is: a VM reports its hypervisor, metal reports its motherboard.
-      dmi=$(box_ssh "${LESSON}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} cat /sys/class/dmi/id/sys_vendor" 2>/dev/null || echo "?")
+      dmi=$(box_ssh "${BOX}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 ${ALPINE} cat /sys/class/dmi/id/sys_vendor" 2>/dev/null || echo "?")
       echo "    kata guest DMI sys_vendor: ${dmi}"
       ;;
 
@@ -196,7 +205,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # "0\n0" — which is not equal to "0", and the check then reports a healthy gateway precisely
       # when the gateway is down. That is the exact failure this whole file exists to catch.
       # shellcheck disable=SC2016  # must expand on the box, not here
-      if box_ssh "${LESSON}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
+      if box_ssh "${BOX}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
         pass "OpenShell: gateway reachable and Connected"
       else
         fail "OpenShell: gateway not Connected — see substrates/README.md, this is the private-IP constraint"
@@ -206,7 +215,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
     50-nat-vm)
       # Asked of the HOST, not of the guest. By the time this runs, up.sh has already re-pointed the
       # lesson at the guest, and the guest has no libvirt — so box_ssh here would always fail.
-      got=$(box_ssh_host "${LESSON}" 'sudo virsh domstate openshell-guest 2>/dev/null' || echo "?")
+      got=$(box_ssh_host "${BOX}" 'sudo virsh domstate openshell-guest 2>/dev/null' || echo "?")
       if [ "${got}" = "running" ]; then
         pass "NAT guest: libvirt domain 'openshell-guest' is running"
       else
@@ -214,7 +223,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       fi
       # The guest's whole reason to exist is a PRIVATE primary address on its default-route
       # interface. A public one there means OpenShell will refuse to start, so read it, don't assume.
-      addr=$(box_ssh "${LESSON}" "ip -4 -o addr show scope global | head -1 | awk '{print \$4}'" 2>/dev/null || echo "?")
+      addr=$(box_ssh "${BOX}" "ip -4 -o addr show scope global | head -1 | awk '{print \$4}'" 2>/dev/null || echo "?")
       case "${addr}" in
         10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[01].*)
           pass "NAT guest: primary address ${addr} is private — the topology OpenShell requires"
@@ -224,7 +233,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
       ;;
 
     60-k8s)
-      ready=$(box_ssh "${LESSON}" "kubectl get nodes --no-headers 2>/dev/null | awk '{print \$2}'" || echo "?")
+      ready=$(box_ssh "${BOX}" "kubectl get nodes --no-headers 2>/dev/null | awk '{print \$2}'" || echo "?")
       if [ "${ready}" = "Ready" ]; then
         pass "k3s: the node is Ready"
       else
@@ -234,18 +243,18 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # The EXPECTED answer here is "identical", and it is the whole of lesson 6. A pod composes
       # namespaces and cgroups exactly as lesson 2's container did; it is not a kernel boundary, and
       # a reader has to see that stated by the machine before lessons 7 and 8 mean anything.
-      got=$(k8s_pod_output "${LESSON}" sbxchk-kernel "" uname -r)
+      got=$(k8s_pod_output "${BOX}" sbxchk-kernel "" uname -r)
       if [ "${got}" = "${NODE_KERNEL}" ]; then
         pass "pod runs on the NODE kernel (${got}) — correct, a pod is not a kernel boundary"
       else
         fail "pod kernel '${got}' != node '${NODE_KERNEL}' — something is already intercepting, and lesson 6's baseline is wrong"
       fi
 
-      k8s_netpol_enforced "${LESSON}"
+      k8s_netpol_enforced "${BOX}"
       ;;
 
     70-k8s-gvisor)
-      got=$(k8s_pod_output "${LESSON}" sbxchk-gvisor gvisor uname -r)
+      got=$(k8s_pod_output "${BOX}" sbxchk-gvisor gvisor uname -r)
       case "${got}" in
         *gvisor*) pass "gVisor pod reports its OWN kernel (${got}), not the node's" ;;
         "${NODE_KERNEL}") fail "gVisor pod reports the NODE kernel (${got}) — the RuntimeClass was accepted and runc ran anyway, the silent fallback" ;;
@@ -262,14 +271,14 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # sorts first would be a real hole rather than a cosmetic one: `kata-clh` sorts ahead of
       # `kata-qemu`, so a box where clh worked and qemu did not would pass this check and then fail
       # the lesson. A setup assertion has to test the thing the lesson actually runs.
-      kclass=$(box_ssh "${LESSON}" \
+      kclass=$(box_ssh "${BOX}" \
         "kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -x 'kata-qemu' \
          || kubectl get runtimeclass -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep '^kata' | head -1" 2>/dev/null || echo "")
       if [ -z "${kclass}" ]; then
         fail "Kata: no kata* RuntimeClass exists — kata-deploy did not register one"
       else
         echo "    kata RuntimeClass: ${kclass}"
-        got=$(k8s_pod_output "${LESSON}" sbxchk-kata "${kclass}" uname -r)
+        got=$(k8s_pod_output "${BOX}" sbxchk-kata "${kclass}" uname -r)
         if [ "${got}" = "FAILED" ] || [ -z "${got}" ]; then
           fail "Kata: could not run a pod under runtimeClassName ${kclass}"
         elif [ "${got}" = "${NODE_KERNEL}" ]; then
@@ -283,7 +292,7 @@ for sub in $(lesson_substrates "${LESSON}"); do
         # It is not available everywhere: measured here, neither kata-clh nor kata-qemu exposes
         # /sys/class/dmi at all, because a minimal guest need not build SMBIOS support in. The kernel
         # comparison above already settled it, so an absent DMI is a fact to print, not a failure.
-        dmi=$(k8s_pod_output "${LESSON}" sbxchk-kata-dmi "${kclass}" cat /sys/class/dmi/id/sys_vendor)
+        dmi=$(k8s_pod_output "${BOX}" sbxchk-kata-dmi "${kclass}" cat /sys/class/dmi/id/sys_vendor)
         echo "    kata guest DMI sys_vendor: ${dmi} (absent on a minimal guest — the kernel row is the proof)"
       fi
       ;;
@@ -293,12 +302,12 @@ for sub in $(lesson_substrates "${LESSON}"); do
       # nothing, so `$(... | grep -c X || echo 0)` captures "0\n0" — which is not "0", and the check
       # then reports a healthy gateway precisely when the gateway is down.
       # shellcheck disable=SC2016  # must expand on the box, not here
-      if box_ssh "${LESSON}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
+      if box_ssh "${BOX}" 'source ~/.sandboxing-tutorial.env 2>/dev/null; openshell status 2>&1' | grep -q Connected; then
         pass "OpenShell: gateway reachable and Connected"
       else
         fail "OpenShell: gateway not Connected — see substrates/README.md"
       fi
-      crd=$(box_ssh "${LESSON}" "kubectl get crd sandboxes.agents.x-k8s.io -o name 2>/dev/null" || echo "")
+      crd=$(box_ssh "${BOX}" "kubectl get crd sandboxes.agents.x-k8s.io -o name 2>/dev/null" || echo "")
       if [ -n "${crd}" ]; then
         pass "Agent Sandbox CRD installed (${crd})"
       else
@@ -308,4 +317,4 @@ for sub in $(lesson_substrates "${LESSON}"); do
   esac
 done
 
-[ "${FAILED}" -eq 0 ] || die "boundary assertions FAILED for ${LESSON} — the box is not what the lesson claims."
+[ "${FAILED}" -eq 0 ] || die "boundary assertions FAILED for ${BOX} — the box is not what the lesson claims."

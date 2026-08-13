@@ -79,13 +79,26 @@ What to actually check, beyond "it exited 0":
 
   ```bash
   scw instance server list zone=fr-par-1     # servers
-  scw instance volume list zone=fr-par-1     # a volume outlives a badly-deleted server
-  scw instance ip list zone=fr-par-1         # so does a flexible IP
+  scw block volume list zone=fr-par-1        # sbs root volumes — EVERY lesson's; see below
+  scw instance volume list zone=fr-par-1     # l_ssd/b_ssd only, for a local-volume lesson
+  scw instance ip list zone=fr-par-1         # a flexible IP outlives a badly-deleted server
   ```
 
-  All three must be empty. Checking only the server list is how an orphaned volume
-  bills quietly for a month. Never delete a cluster, volume or image this repo did
-  not create.
+  All four must be empty. Checking only the server list is how an orphaned volume
+  bills quietly for a month.
+
+  > [!danger]
+  > **`scw instance volume list` cannot see this repo's root volumes.** `lib.sh`
+  > defaults `root_volume_type` to `sbs`, and an sbs volume lives in the **Block**
+  > API — `instance volume list` returns `0` for it, which reads exactly like an
+  > all-clear. On 2026-08-13 that gap hid a 20 GB volume detached since 2026-08-08,
+  > billing ~€0.06/day. **`scw block volume list` is the query that finds them**;
+  > a detached one has `references: []`.
+
+  Never delete a cluster, volume or image this repo did not create. Block volumes
+  carry no `sbx-` prefix to attribute them by — their name comes from the image
+  (`Ubuntu 24.04 Noble Numbat_sbs_volume_0`) — so `down.sh` reports them with a
+  ready-to-paste `delete` line and leaves the judgement to you.
 
 **Dashboard / UI checks** — some lessons surface results in a web UI (an MLflow
 or Langfuse instance, a cluster dashboard). There is **no repo-wide dev server**;

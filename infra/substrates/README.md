@@ -3,8 +3,56 @@
 Each script installs one boundary and asserts it engages **from inside** (kernel
 identity), never from the flag.
 
-`10`–`50` are chapter 2 (one host); `60`–`90` are chapter 3 (Kubernetes) and are
-documented at the end of this file.
+They live in per-chapter directories, and the `substrates` arrays in `lessons.json` carry
+that path (`chapter-3/60-k8s`). `up.sh` interpolates it straight into the path it runs, so
+adding a chapter needs no code change; `check.sh` dispatches on the **basename**, so its
+assertions stay named after the boundary rather than after the tree.
+
+- **`chapter-2/`** — `10`–`50`, one host. One box per lesson.
+- **`chapter-3/`** — `60`–`90`, Kubernetes. `60`+`70`+`80` install onto the ONE cluster
+  **lessons 6–8** share (`chapter-03-k8s`); `90` goes on lesson 9's own box. Documented at
+  the end of this file.
+
+> [!warning]
+> **Chapter 3's order is load-bearing, and it is about restarts rather than files.**
+> `70-k8s-gvisor.sh` is the only substrate in the chapter that runs `systemctl restart
+> k3s`. A restart *after* `80` terminates the kata-deploy DaemonSet pod, which reverts its
+> own installation on the way out. So: **60 → 70 → 80**, and `70` both writes its containerd
+> template additively (it no longer owns that file — kata-deploy writes into the same
+> directory) and restarts only when the template actually changed, so re-running `up.sh`
+> against a live shared cluster does not bounce Kata.
+
+## gVisor and Kata DO coexist on one k3s node (2026-08-13)
+
+The open question is answered, and it was answered empirically rather than by reasoning about
+kata-deploy's internals — two plausible mechanisms disagreed about whether it appends to the same
+`*.tmpl` or writes a `config-v3.toml.d/` drop-in, so `70` was simply made additive under both and
+`check.sh` was left to settle it. On one `PLAY2-MICRO` running `60`+`70`+`80`:
+
+```text
+kubectl get runtimeclass   gvisor (83s)  kata-qemu + ~18 variants (75s)   <- both registered
+node / plain pod           6.8.0-106-generic     <- Kata did NOT become the default runtime
+runtimeClassName: gvisor   4.19.0-gvisor
+runtimeClassName: kata-qemu 6.18.35              <- a real guest VM, same kernel metal recorded
+```
+
+All read from inside the sandbox. Lessons 6, 7 and 8 then reproduced their separate-box scores
+exactly (14, 16, 14 of 19).
+
+## …but `90-k8s-openshell` does not fit beside them on 8 GB
+
+With `90` also installed, the OpenShell gateway and Agent Sandbox controller stay resident from
+provisioning onward, and lesson 8's **Part 3b** — which boots Kata guests repeatedly to time the
+per-pod VM tax — took the whole box down mid-run: ssh dropped (`Connection closed by remote host`),
+and lesson 9 could not reach the machine at all afterwards. Lesson 8 had passed that same Part 3b
+on an 8 GB box carrying `60`+`80` and no gateway, which is what points at memory rather than at a
+substrate conflict.
+
+The obvious fix — a bigger box — **is not available on this account**: `POP2-4C-16G`, `PRO2-XS`,
+`BASIC3-X4C-16G` and `BASIC3-X6C-24G` all fail to create with `has reached its quota (0/0)`, and
+`PLAY2-MICRO` is the largest `PLAY2`. So lesson 9 keeps its own box. It also loses the least by
+being separate: OpenShell is the one chapter-3 boundary **not** selected with `runtimeClassName`
+(its sandboxes take that from the gateway), so it was never part of the per-pod menu.
 
 > [!important]
 > **This file is a measurement log, and its early entries were superseded on

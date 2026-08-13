@@ -2,9 +2,9 @@
   "lesson": "lesson-07-k8s-gvisor",
   "mode": "network-on",
   "boundary": "hardened Pod, runtimeClassName: gvisor, scoped NetworkPolicy egress",
-  "generated_at": "2026-08-11T16:51:23+02:00",
+  "generated_at": "2026-08-13T11:53:36+02:00",
   "complete": false,
-  "duration_s": 114.7,
+  "duration_s": 119.5,
   "blocked": 16,
   "scored": 19,
   "host": {
@@ -107,8 +107,8 @@
       "attack": "8",
       "why": "Can it call bpf() \u2014 a powerful, CVE-rich kernel interface?",
       "group": "kernel",
-      "value": "EINVAL",
-      "detail": "refused \u2014 rejected a valid request",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
       "verdict": "BLOCKED"
     },
     {
@@ -179,7 +179,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 197.5,
+      "value": 239.8,
       "detail": "",
       "verdict": "INFO"
     },
@@ -188,7 +188,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 128.9,
+      "value": 122.0,
       "detail": "",
       "verdict": "INFO"
     },

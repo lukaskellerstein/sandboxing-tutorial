@@ -18,7 +18,7 @@ One command, and the box is destroyed even if the lesson fails. It writes
 
 ## Where this actually runs
 
-Single-node **k3s**, installed by [`infra/substrates/60-k8s.sh`](../../infra/substrates/60-k8s.sh)
+Single-node **k3s**, installed by [`infra/substrates/chapter-3/60-k8s.sh`](../../infra/substrates/chapter-3/60-k8s.sh)
 onto the lesson's own disposable Scaleway VM. k3s is conformant Kubernetes: the
 `RuntimeClass` field lessons 7 and 8 turn is the same field on any cluster, and it is
 the same containerd underneath.

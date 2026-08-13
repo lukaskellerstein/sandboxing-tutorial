@@ -197,22 +197,22 @@
         "id": "check",
         "title": "Assert the boundary",
         "detail": "check.sh, read from inside the box and never from the flag we passed",
-        "expect_s": 60,
+        "expect_s": 360,
         "billable": true
       }
     ]
   },
 
   "substrate_expect_s": {
-    "10-podman": 90,
-    "20-runsc": 60,
-    "30-containerd-kata": 600,
-    "40-openshell": 300,
-    "50-nat-vm": 600,
-    "60-k8s": 120,
-    "70-k8s-gvisor": 90,
-    "80-k8s-kata": 600,
-    "90-k8s-openshell": 420
+    "chapter-2/10-podman": 90,
+    "chapter-2/20-runsc": 60,
+    "chapter-2/30-containerd-kata": 600,
+    "chapter-2/40-openshell": 300,
+    "chapter-2/50-nat-vm": 600,
+    "chapter-3/60-k8s": 120,
+    "chapter-3/70-k8s-gvisor": 90,
+    "chapter-3/80-k8s-kata": 600,
+    "chapter-3/90-k8s-openshell": 420
   },
 
   "run": {

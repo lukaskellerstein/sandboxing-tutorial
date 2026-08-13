@@ -147,6 +147,17 @@ def lessons() -> dict:
     return {k: v for k, v in load_json(LESSONS_JSON).items() if not k.startswith("_")}
 
 
+def box_of(target: str) -> str:
+    """The machine a target runs on — itself, unless it names a shared one.
+
+    Chapter 3's four lessons carry ``"box": "chapter-03-k8s"`` and share one cluster, so a lesson
+    name and a box name have come apart. Everything that reaches for state, liveness, age or price
+    means the BOX; everything that reaches for a directory, a report or a run history means the
+    TARGET. The mirror of lib.sh's ``lesson_box``.
+    """
+    return lessons().get(target, {}).get("box", target)
+
+
 def scrub(stage: dict) -> dict:
     """A stage without stages.json's `//`-prefixed comment keys.
 
@@ -177,7 +188,7 @@ def stage_table(target: str, op: str = "up") -> list[dict]:
         return [scrub(st) for st in manifest[op]["stages"]]
     if target == CLUSTER:
         return [scrub(st) for st in manifest[CLUSTER]["stages"]]
-    subs = lessons().get(target, {}).get("substrates", [])
+    subs = lessons().get(box_of(target), {}).get("substrates", [])
     hints = manifest.get("substrate_expect_s", {})
     out: list[dict] = []
     for st in manifest["lesson"]["stages"]:
@@ -803,8 +814,13 @@ def progress(target: str) -> dict:
 
 
 def box_state(target: str) -> dict | None:
-    """The `.env` lib.sh writes per lesson: the server id and IP of a live, billable machine."""
-    f = STATE / f"{target}.env"
+    """The `.env` lib.sh writes per BOX: the server id and IP of a live, billable machine.
+
+    Resolved through `box_of`, so a shared lesson reports the state of the cluster it runs on rather
+    than reporting no box at all. Everything downstream — liveness, age, the panel's `run` advice —
+    is built on this one lookup and inherits the resolution for free.
+    """
+    f = STATE / f"{box_of(target)}.env"
     if not f.exists():
         return None
     out: dict[str, str] = {}
@@ -998,7 +1014,7 @@ def box_live(target: str, acc: dict | None = None) -> bool | None:
     if not acc or not acc.get("available"):
         return None
     try:
-        if float(acc.get("read_epoch", 0)) < (STATE / f"{target}.env").stat().st_mtime:
+        if float(acc.get("read_epoch", 0)) < (STATE / f"{box_of(target)}.env").stat().st_mtime:
             return None
     except OSError:
         return None
@@ -1306,7 +1322,13 @@ def render_status(targets: list[str], with_account: bool) -> None:
         meta = lessons().get(t, {})
         box = box_state(t)
         alive_in_account = box_live(t, acc)
-        pr = hourly_price(meta.get("type", ""), meta.get("kind", "")) if box else None
+        # Price belongs to the MACHINE, never to a lesson that merely runs on one. Chapter 3's four
+        # lessons all resolve to the same cluster, and that cluster has its own row in this table —
+        # so pricing them here would charge for one box four times in the single number people act
+        # on. Keyed on `box` being present rather than on type/kind being absent: the latter works
+        # today only because hourly_price("", "") happens to return None, which is an accident to
+        # depend on rather than a rule.
+        pr = None if "box" in meta else (hourly_price(meta.get("type", ""), meta.get("kind", "")) if box else None)
         # A box the account does not have is not costing anything, whatever the state file says.
         # Adding its price back would make the one number people act on the wrong number.
         if pr and alive_in_account is not False:
@@ -1674,16 +1696,22 @@ def main(argv: list[str] | None = None) -> int:
                                 # Seconds since the ACCOUNT says the machine was created — the
                                 # billing clock, and null when nobody has asked recently.
                                 "box_age_s": box_age_s(t, acc),
-                                "kind": lessons()[t].get("kind"),
-                                "type": lessons()[t].get("type"),
+                                "kind": lessons()[box_of(t)].get("kind"),
+                                "type": lessons()[box_of(t)].get("type"),
+                                # The machine this target runs on. Equal to the target for the usual
+                                # one-box-per-lesson case; a different name means it shares, and a
+                                # consumer summing prices must skip those rows or bill one cluster
+                                # once per lesson on it.
+                                "box_name": box_of(t),
                                 # The cluster is the one target with a resumable multi-hour `up`,
                                 # and a client should not have to hardcode its name to know that.
                                 "cluster": t == CLUSTER,
-                                # Priced only when a box exists. Summing the catalogue price of
-                                # every lesson would invent a bill nobody is paying.
+                                # Priced only when a box exists AND this target owns it. Summing the
+                                # catalogue price of every lesson would invent a bill nobody is
+                                # paying; pricing a shared lesson would bill its cluster four times.
                                 "hourly_price": (
                                     hourly_price(lessons()[t].get("type", ""), lessons()[t].get("kind", ""))
-                                    if box_state(t)
+                                    if box_state(t) and "box" not in lessons()[t]
                                     else None
                                 ),
                                 "progress": progress(t),
@@ -1813,7 +1841,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{CLUSTER} is a cluster, not a lesson — run lesson-10..13 against it instead", file=sys.stderr)
             return EXIT_USAGE
         cr = current_run(a.target)
-        up_in_flight = bool(cr and cr.get("alive") and cr.get("op") == "up")
+        # An `up` triggered through a shared lesson is recorded against the BOX — up.sh resolves the
+        # name before it calls run_track, because what is being provisioned is the cluster. So look
+        # there too, or `run` issued straight after `up` reports "no box" about a machine that is
+        # visibly being built.
+        up_cr = cr if box_of(a.target) == a.target else (cr or current_run(box_of(a.target)))
+        up_in_flight = bool(up_cr and up_cr.get("alive") and up_cr.get("op") == "up")
         if a.target in lessons() and not box_state(a.target) and not up_in_flight:
             print(f"{a.target}: no box — nothing to run on. `./ctl.py up {a.target}` first.", file=sys.stderr)
             return EXIT_NOOP

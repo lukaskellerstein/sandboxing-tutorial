@@ -43,7 +43,7 @@ gives this lesson 40 GB for that reason.
 
 Kata is a **containerd shim-v2**. Podman cannot drive a shim-v2 on any OS — it is
 not a missing flag or a version problem, it is a different architecture. So
-`infra/substrates/30-containerd-kata.sh` installs containerd + nerdctl +
+`infra/substrates/chapter-2/30-containerd-kata.sh` installs containerd + nerdctl +
 `kata-static` **alongside** podman, which is left completely untouched: podman is
 daemonless and never looks at containerd, so lessons 2 and 3 still behave
 identically on a box that has both.

@@ -11,5 +11,9 @@ source "${HERE}/lib.sh"
 
 LESSON="${1:?usage: ./ssh.sh <lesson> [command]}"
 shift
-write_ssh_config "${LESSON}"
-exec ssh -F "$(ssh_config_file "${LESSON}")" -t box "$@"
+# A shell is a shell on a MACHINE, so either name gets you there: chapter 3's four lessons all
+# resolve to the one cluster they share, and `./ssh.sh lesson-08-k8s-kata` lands on the same node as
+# `./ssh.sh chapter-03-k8s`. Anything else would be a trap while investigating a failed run.
+BOX=$(lesson_box "${LESSON}")
+write_ssh_config "${BOX}"
+exec ssh -F "$(ssh_config_file "${BOX}")" -t box "$@"

@@ -15,7 +15,12 @@ set -euo pipefail
 K3S_VERSION="v1.36.3+k3s1"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
+# THREE levels up: chapter-3 -> substrates -> infra -> the repo root. Count them against this file's
+# own path rather than trusting the shape — substrates moved into per-chapter directories on
+# 2026-08-13 and this line, still climbing two, resolved REPO_ROOT to `infra/` and sent the
+# import below to `infra/infra/images/...`. It fails as bash exit 127 mid-provision, which reads
+# like a missing tool rather than a wrong path.
+REPO_ROOT="$(cd "${HERE}/../../.." && pwd)"
 
 # The unprivileged user the LESSON runs as. up.sh invokes this script with sudo from an ssh session
 # as that user, so SUDO_USER is it; the fallback matches what cloud-init creates.

@@ -33,7 +33,7 @@ down, and this lesson does not claim otherwise. `runsc` needs no hardware featur
 and behaves identically either way — verified on 2026-08-06 by running this lesson
 on both a VM and Elastic Metal and getting the same `4.19.0-gvisor`.
 
-`infra/substrates/20-runsc.sh` installs `runsc` and registers it as an **opt-in**
+`infra/substrates/chapter-2/20-runsc.sh` installs `runsc` and registers it as an **opt-in**
 podman runtime; podman's default runtime is left alone, which is why Part 3 can
 re-run the previous rung on the same box.
 

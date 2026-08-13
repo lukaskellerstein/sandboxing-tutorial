@@ -2,9 +2,9 @@
   "lesson": "lesson-06-k8s",
   "mode": "network-on",
   "boundary": "hardened Pod, scoped NetworkPolicy egress",
-  "generated_at": "2026-08-11T15:34:08+02:00",
+  "generated_at": "2026-08-13T11:51:33+02:00",
   "complete": false,
-  "duration_s": 61.7,
+  "duration_s": 68.2,
   "blocked": 14,
   "scored": 19,
   "host": {
@@ -89,7 +89,7 @@
       "attack": "8",
       "why": "Can it enumerate the host's loaded kernel modules?",
       "group": "kernel",
-      "value": 216,
+      "value": 226,
       "detail": "",
       "verdict": "SUCCEEDED"
     },
@@ -179,7 +179,7 @@
       "attack": "-",
       "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
       "group": "cost",
-      "value": 71.9,
+      "value": 75.6,
       "detail": "",
       "verdict": "INFO"
     },
@@ -188,7 +188,7 @@
       "attack": "-",
       "why": "CPU-bound work, in ms \u2014 for comparison.",
       "group": "cost",
-      "value": 131.2,
+      "value": 118.9,
       "detail": "",
       "verdict": "INFO"
     },

@@ -18,7 +18,7 @@ import subprocess
 import time
 from pathlib import Path
 
-#: The agent image, side-loaded onto the node by ``infra/substrates/60-k8s.sh``.
+#: The agent image, side-loaded onto the node by ``infra/substrates/chapter-3/60-k8s.sh``.
 #:
 #: NOT ``:latest``, and that is a Kubernetes fact rather than a preference: a ``:latest`` tag defaults
 #: ``imagePullPolicy`` to ``Always``, so the kubelet would go to Docker Hub for an image already on

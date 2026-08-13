@@ -17,7 +17,7 @@ cd tutorial/lesson-09-k8s-openshell
 > [!warning]
 > **OpenShell is alpha, and its Kubernetes path is the newest part of it.** Upstream
 > says so plainly. The version is pinned in
-> [`infra/substrates/90-k8s-openshell.sh`](../../infra/substrates/90-k8s-openshell.sh)
+> [`infra/substrates/chapter-3/90-k8s-openshell.sh`](../../infra/substrates/chapter-3/90-k8s-openshell.sh)
 > and recorded in this lesson's scorecard; unpinned alpha tooling rots silently.
 
 ## What actually changed from lesson 5

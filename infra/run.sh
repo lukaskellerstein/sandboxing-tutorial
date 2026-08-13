@@ -18,6 +18,12 @@ shift
 [ "${1:-}" = "--" ] && shift
 ARGS="$*"
 
+# The BOX is where this runs; the LESSON is what runs. Usually the same name, but chapter 3's four
+# lessons share `chapter-03-k8s`, and past this point the two are used for genuinely different jobs:
+# BOX picks the machine (state, ssh, rsync), LESSON picks the directory to cd into, the run history
+# to record under, and the report to render. Collapsing them is what made sharing impossible before.
+BOX=$(lesson_box "${LESSON}")
+
 # A run may be asked for while ./up.sh is still building the box — the panel's `u` then `r`,
 # seconds apart. Running early is not merely premature: the rsync below and up.sh's sync stage
 # would mirror the same tree concurrently, and their --delete passes destroy each other's temp
@@ -26,14 +32,14 @@ ARGS="$*"
 run_track run "${LESSON}"
 
 stage_begin wait-box "waiting for the box to be ready"
-box_wait_ready "${LESSON}"
+box_wait_ready "${BOX}"
 stage_end ok
 
-state_load "${LESSON}"
+state_load "${BOX}"
 
 stage_begin sync "syncing the lesson tree"
 say "syncing the lesson tree to the box"
-rsync -az --delete -e "$(box_rsync_shell "${LESSON}")" \
+rsync -az --delete -e "$(box_rsync_shell "${BOX}")" \
   --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude 'results' \
   --exclude '.state' --exclude '.ruff_cache' \
   "${REPO_ROOT}/" "box:sandboxing-tutorial/"
@@ -58,7 +64,7 @@ METADATA_URL="${PROBE_METADATA_URL:-http://169.254.42.42/conf}"
 COLOR_EXPORT=""
 [ -t 1 ] && COLOR_EXPORT="export CLICOLOR_FORCE=1 && "
 
-box_ssh "${LESSON}" "source ~/.sandboxing-tutorial.env 2>/dev/null; ${COLOR_EXPORT}cd sandboxing-tutorial/tutorial/${LESSON} \
+box_ssh "${BOX}" "source ~/.sandboxing-tutorial.env 2>/dev/null; ${COLOR_EXPORT}cd sandboxing-tutorial/tutorial/${LESSON} \
   && export PATH=\$HOME/.local/bin:\$PATH \
   && export SANDBOXING_TUTORIAL_DISPOSABLE=1 \
   && export PROBE_METADATA_URL=${METADATA_URL} \
@@ -69,7 +75,7 @@ stage_end ok
 stage_begin fetch "fetching the scorecard"
 say "fetching results/"
 mkdir -p "${REPO_ROOT}/results"
-rsync -az -e "$(box_rsync_shell "${LESSON}")" \
+rsync -az -e "$(box_rsync_shell "${BOX}")" \
   "box:sandboxing-tutorial/results/" "${REPO_ROOT}/results/" 2>/dev/null \
   || say "(no results/ on the box — the lesson did not write one)"
 
