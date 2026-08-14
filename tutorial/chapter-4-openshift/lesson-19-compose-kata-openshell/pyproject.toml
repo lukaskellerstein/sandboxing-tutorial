@@ -1,0 +1,17 @@
+[project]
+name = "lesson-19-compose-kata-openshell"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 19: OpenShell composed over Kata on OpenShift, through SCC admission, on the platform it is sold on."
+requires-python = ">=3.12"
+# Pins the openshell CLI to the gateway's version. The gateway is installed by install.sh at 0.0.99;
+# a client on a different cadence drifts from it (the substrate's own note), so name it here.
+dependencies = ["openshell==0.0.99"]
+
+[tool.ruff]
+# Lint/format policy comes from the repo-root ruff.toml (one place to change it). It must be pulled
+# in explicitly: a leaf carrying [tool.ruff] SHADOWS the root rather than merging, so without this
+# line the leaf silently runs ruff's own defaults. Count the dirs: leaf -> chapter -> tutorial -> root.
+extend = "../../../ruff.toml"
+# This lesson directory is its own source root, so the sibling scorecard.py and openshift.py sort as
+# first-party imports whether ruff runs here or from the repo root.
+src = ["."]

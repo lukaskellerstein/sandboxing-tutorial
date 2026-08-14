@@ -191,6 +191,13 @@ The sharpest demonstration in this tutorial is lesson 5's `binary_scoped` probe:
 request — denied.** No kernel-level sandbox can see that difference, by
 construction. A syscall is a syscall.
 
+> [!note]
+> Policy is not the only axis beside the boundary. A third —
+> **orchestration**, the control plane that *selects* a runtime and runs the agent (the
+> Kubernetes-native `Sandbox` API, `kubernetes-sigs/agent-sandbox`) — is covered in
+> [`orchestration.md`](orchestration.md). It provides no isolation of its own, which is
+> why it has no scored lesson; naming it keeps the map honest.
+
 ---
 
 ## 6. What each one actually blocked, measured
@@ -249,16 +256,19 @@ because the distinction lives in HTTP and a kernel does not read HTTP.
 ## 7. The trap: stacking two boundaries can make you *less* safe
 
 Because OpenShell is a different layer, stacking it on gVisor or Kata is legal.
-Lesson 14 runs it rather than describing it, and the result is the most important
-lesson in the tutorial.
+The composition is run rather than described — **lesson 16** stacks OpenShell on
+gVisor (and watches Landlock vanish), **lesson 17** stacks it on Kata (where it
+holds), and **lesson 19** proves the Kata case on OpenShift — and the result is the
+most important lesson in the tutorial. Chapters 2 and 4 cannot host the gVisor
+stack and document why (lessons 14, 18).
 
 ```mermaid
 flowchart TB
-    subgraph FAIL["OpenShell ON gVisor — silently broken"]
+    subgraph FAIL["OpenShell ON gVisor — a layer silently lost"]
         direction TB
         O1["OpenShell asks the kernel<br/>for <b>Landlock</b>"]
         G1["gVisor's fake kernel:<br/><b>ENOSYS — never heard of it</b>"]
-        R1["filesystem rules<br/><b>stop being enforced</b><br/>...everything still looks healthy"]
+        R1["Landlock backing <b>silently gone</b><br/>HIGH audit finding is the only signal<br/>(write here still blocked by the read-only rootfs)"]
         O1 --> G1 --> R1
     end
 
@@ -274,18 +284,25 @@ flowchart TB
     style WIN fill:#e6f4ea,stroke:#34a853
 ```
 
-The failure is **silent** — the attack starts succeeding, and the only signal is
-a High-severity *"Running WITHOUT filesystem restrictions"* line in the audit
-trail. Setting `landlock.compatibility: hard_requirement` makes it fail *closed*
-instead of failing quietly.
+The failure is **silent**, and — measured on OpenShell 0.0.99 (lesson 16) — subtler
+than "the attack starts succeeding." What actually happens is that Landlock drops
+out, flagged only by a High-severity *"Landlock Filesystem Sandbox Unavailable"*
+line in the audit trail. The write it guarded stays **blocked anyway**, because
+OpenShell's kubernetes driver also backs the read-only paths with a read-only root
+filesystem — so the lost layer is *masked*, the scored result is identical to the
+safe Kata stack, and the audit finding is the only thing that differs. That is the
+more dangerous shape of the bug: a boundary can shed a whole layer with no visible
+effect. Setting `landlock.compatibility: hard_requirement` makes it fail *closed*
+(the sandbox refuses to start) instead of failing quietly.
 
 > [!danger]
 > **The rule that generalizes:**
 > *Composition fails when the lower layer removes a kernel feature the upper
-> layer depends on.*
+> layer depends on* — and it can fail **invisibly**, masked by another layer.
 >
 > Stacking boundaries is not automatically additive. Verify the upper layer is
-> still enforcing — do not infer it from the fact that both are installed.
+> still enforcing — read the audit trail or make it fail closed; do not infer it
+> from the fact that both are installed, or from a single probe that still passes.
 
 ---
 
@@ -314,6 +331,10 @@ flowchart TB
 | **gVisor** | tiny host-kernel attack surface | some syscalls simply do not exist |
 | **Kata** | a real, separate kernel | a VM per pod; boot time; memory |
 | **OpenShell** | *which binary*, *which method*, *an audit trail* | host kernel fully exposed — it is not a kernel boundary |
+
+For the full "which boundary for which threat, at what cost" view — including when
+two granularities beat two mechanisms stacked at one — see
+[`docs/decision-table.md`](decision-table.md).
 
 ---
 

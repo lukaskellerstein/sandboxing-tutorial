@@ -463,8 +463,8 @@ def main() -> None:
         print("  That is a filesystem the sandbox does not present, not a kernel boundary — the kernel")
         print("  underneath is still the node's, which is the whole point of the row above it.")
         print("\n  gVisor and OpenShell are strong in DISJOINT columns — which is what makes composing")
-        print("  them tempting, and what lesson 14 shows going wrong: on gVisor, Landlock returns")
-        print("  ENOSYS and the filesystem half of this policy silently stops being enforced.")
+        print("  them tempting, and what lesson 16 shows going wrong: on gVisor, Landlock returns")
+        print("  ENOSYS and the filesystem half of this policy silently loses its Landlock backing.")
 
         card.save(
             RESULTS,

@@ -27,8 +27,9 @@ version: 1
 filesystem_policy:
   include_workdir: true
   # /etc is read-only, which is what attack 3's backdoor and the `fs_policy_write` probe hit. The
-  # probe writes to /etc/agent-probe-canary specifically because it is the path lesson 14 later
-  # watches regress to ALLOWED when this policy is stacked on gVisor.
+  # probe writes to /etc/agent-probe-canary specifically because it is the path lesson 16 uses to
+  # show Landlock silently drop out under gVisor (there the write stays blocked by the read-only
+  # rootfs — the loss is masked, and only the audit trail shows it).
   read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /app, /etc, /var/log]
   read_write: [/sandbox, /tmp, /dev/null]
 
@@ -36,10 +37,10 @@ landlock:
   # best_effort is the honest default and the trap at the same time. On a real kernel Landlock is
   # enforced; on gVisor's user-space kernel the syscall answers ENOSYS and enforcement silently stops
   # while the sandbox still reports healthy. `hard_requirement` is what makes that fail closed
-  # instead — lesson 14 runs both and shows the difference.
+  # instead — lesson 16 runs both and shows the difference.
   #
   # This rung runs on ordinary runc, so Landlock is genuinely available and genuinely enforced. That
-  # is what makes lesson 9 the clean CONTROL for lesson 14's composition experiment: nothing is
+  # is what makes lesson 9 the clean CONTROL for lesson 16's composition experiment: nothing is
   # stacked underneath it yet.
   compatibility: best_effort
 

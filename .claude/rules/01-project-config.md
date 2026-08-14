@@ -9,12 +9,16 @@ description: Project configuration — architecture, paths, dev environment
      bullet that does not apply rather than leaving a placeholder. -->
 
 > [!important]
-> **Chapters 1–4 are built as of 2026-08-10.** `syllabus.md` and lessons 01–13 exist,
-> as does `infra/`. Lessons **01–09 are green end-to-end on Scaleway VMs** (01–05
-> verified 2026-08-06, 06–09 on 2026-08-07) and **10–13 are green on single-node
-> OpenShift 4.18.49** on `EM-B112X-SSD` bare metal, verified 2026-08-10.
-> **Chapter 5 is still unwritten.** Update this file the moment any of that stops
-> being true.
+> **Chapters 1–4 are built as of 2026-08-10; composition leaves added (spec 04, 2026-08-14).**
+> `syllabus.md` and lessons 01–13 exist, as does `infra/`. Lessons **01–09 are green
+> end-to-end on Scaleway VMs** (01–05 verified 2026-08-06, 06–09 on 2026-08-07) and
+> **10–13 are green on single-node OpenShift 4.18.49** on `EM-B112X-SSD` bare metal,
+> verified 2026-08-10.
+> **Chapter 5 is dissolved** (spec 04): composition is demonstrated in-chapter.
+> **Lessons 16 and 17 are runnable and green on `chapter-03-k8s`** (verified 2026-08-14);
+> **lesson 19 is written but UNVERIFIED** — it needs the human-owned SNO cluster;
+> **lessons 14, 15, 18 are documentation-only README stubs** (no `main.py`, no box, not
+> in `lessons.json`). Update this file the moment any of that stops being true.
 >
 > Chapter 4 breaks the per-lesson-box model on purpose: all four lessons share ONE
 > cluster, so `tutorial/chapter-4-openshift/lesson-1N-*/run.sh` neither provisions nor destroys, and the

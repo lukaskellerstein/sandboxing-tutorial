@@ -1,0 +1,47 @@
+# Lesson 16's fail-closed policy — policy.yaml with ONE line changed.
+#
+# The only difference from policy.yaml is `landlock.compatibility: hard_requirement` below. That one
+# word turns the silent regression into a refusal: instead of starting and quietly dropping the
+# filesystem clause when Landlock answers ENOSYS, the sandbox refuses to start at all.
+#
+# It MUST be supplied at `sandbox create`, never through `policy set` on a live sandbox — the Landlock
+# section is locked at startup, and a live reload is rejected with
+#
+#     landlock policy cannot be changed on a live sandbox (applied at startup)
+#
+# which is a different failure from the one this file exists to show. main.py Part 2 passes it at
+# create and reads the create call's own exit status as the result.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # The one line that differs from policy.yaml. best_effort fails open (silently); hard_requirement
+  # fails closed (the sandbox refuses to start). On a runtime that provides Landlock this changes
+  # nothing — the sandbox starts either way. On gVisor it is the difference between a policy that
+  # looks enforced and one that admits it is not.
+  compatibility: hard_requirement
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }

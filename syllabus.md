@@ -5,9 +5,11 @@
 > A lesson directory is created only after it appears here. Changing the list or
 > the ordering is a decision, not an edit — lessons reference each other by number.
 
-One agent. One fixed set of hostile actions. Fourteen lessons in which that agent
+One agent. One fixed set of hostile actions. Thirteen lessons in which that agent
 tries the **same nine attacks** against progressively stronger boundaries, and you
-watch them stop working one column at a time.
+watch them stop working one column at a time — then six composition leaves that
+stack two boundaries and measure what that actually costs (three run it, three
+document where the mechanism forbids it).
 
 ---
 
@@ -148,8 +150,13 @@ matched set.
 **disjoint** columns — attack 8 versus attacks 5, 6 and 9. Composing them is therefore
 tempting, and it **silently disables Landlock**, because gVisor's user-space kernel
 answers `ENOSYS`. Under Kata's real guest kernel the same composition keeps both.
-Lesson 14 runs all three and derives the rule: *composition fails when the lower
-layer removes a kernel feature the upper layer depends on.*
+Rather than one synthesis lesson, each chapter demonstrates the composition its
+own boundary can host and documents the ones its mechanism forbids: lesson 16 runs
+OpenShell-over-gVisor (and watches Landlock vanish), lessons 17 and 19 run
+OpenShell-over-Kata (where it holds), and the rule they derive is *composition
+fails when the lower layer removes a kernel feature the upper layer depends on.*
+The cross-rung comparison and the pick-a-boundary guidance live in
+[`docs/decision-table.md`](docs/decision-table.md).
 
 **Why gVisor is absent from chapter 4:** OpenShift's supported sandbox is Kata, via
 the sandboxed containers operator. Running gVisor there would mean hand-installing
@@ -307,7 +314,7 @@ reachability, firewalls and reverse tunnels.
 
 Every lesson leaf is a standalone `uv` project and **imports nothing from another
 leaf**. The agent wiring, the entrypoint and the attack suite would otherwise be
-copied fourteen times, so they live where they belong for a tutorial about
+copied into every runnable leaf, so they live where they belong for a tutorial about
 containers: **inside a container image**, built once by `infra/images/agent/`.
 
 A lesson's `main.py` therefore owns only *the boundary it is teaching* and stays
@@ -337,8 +344,10 @@ machine.
 ### Where results go
 
 No MLflow, no Langfuse. Every lesson prints its scorecard and appends it to
-`results/<lesson>.json` (gitignored). **Lesson 14 renders the final table from
-those files and never from hand-entered numbers.**
+`results/<lesson>.json` (gitignored). **`infra/report/overall.py` renders the
+cross-rung table from those files and never from hand-entered numbers**, and
+[`docs/decision-table.md`](docs/decision-table.md) turns it into a
+which-boundary-for-which-threat guide.
 
 Reporting is **two tiers**, and the split is deliberate:
 
@@ -457,20 +466,31 @@ sandboxing-tutorial/
     │   ├── lesson-02-container/
     │   ├── lesson-03-container-gvisor/
     │   ├── lesson-04-container-kata/
-    │   └── lesson-05-container-openshell/
+    │   ├── lesson-05-container-openshell/
+    │   ├── lesson-14-compose-gvisor-openshell/    (documentation only)
+    │   └── lesson-15-compose-kata-openshell/      (documentation only)
     ├── chapter-3-kubernetes/
     │   ├── lesson-06-k8s/
     │   ├── lesson-07-k8s-gvisor/
     │   ├── lesson-08-k8s-kata/
-    │   └── lesson-09-k8s-openshell/
+    │   ├── lesson-09-k8s-openshell/
+    │   ├── lesson-16-compose-gvisor-openshell/    (runnable)
+    │   └── lesson-17-compose-kata-openshell/      (runnable)
     └── chapter-4-openshift/
         ├── lesson-10-openshift-pod/
         ├── lesson-11-openshift-scc/
         ├── lesson-12-openshift-kata/
-        └── lesson-13-openshift-openshell/
+        ├── lesson-13-openshift-openshell/
+        ├── lesson-18-compose-gvisor-openshell/    (documentation only)
+        └── lesson-19-compose-kata-openshell/      (runnable)
 ```
 
-Chapter 5's `lesson-14-compose-and-compare` is not written yet and has no folder until it is.
+The composition leaves continue the global lesson sequence (14–19); the chapter
+folder conveys which chapter each belongs to, so a `lesson-16` under
+`chapter-3-kubernetes` is expected. The three **documentation-only** leaves
+(14, 15, 18) are README-only and carry no `main.py`, `run.sh`, or `lessons.json`
+row — they explain why the composition has no mechanism in that chapter and point
+at the chapter where it runs for real.
 
 Each leaf: `main.py`, `README.md`, `pyproject.toml` (with `[tool.ruff]`
 `extend = "../../../ruff.toml"`), `uv.lock`, `.gitignore`. Run one with:
@@ -529,6 +549,8 @@ next.**
 | 3 | `lesson-03-container-gvisor` | 45 min | attack 8 |
 | 4 | `lesson-04-container-kata` | 60 min | attack 8, keeping Landlock |
 | 5 | `lesson-05-container-openshell` | 75 min | attacks 2, 4, 5, 6 and 9 — selectively, with the network still on |
+| 14 | `lesson-14-compose-gvisor-openshell` | 15 min | *documentation only* — gVisor+OpenShell has no mechanism on the host (rootless podman cannot drive `runsc`); runs for real in lesson 16 |
+| 15 | `lesson-15-compose-kata-openshell` | 15 min | *documentation only* — Kata+OpenShell has no mechanism on the host (podman cannot drive a shim-v2); runs for real in lessons 17 and 19 |
 
 **`lesson-02-container`** — the single biggest jump in the tutorial. Rootless
 container, `--cap-drop ALL`, `no-new-privileges`, non-root, `--read-only` plus a
@@ -597,8 +619,18 @@ selectively** — a distinction blanket on/off cannot express. Plus a full **OCS
 audit trail** — attack 9 dies at last, every attempt recorded, including the ones
 that failed. Note what it does *not* close: the host kernel is fully exposed, so
 attack 8 works again. **gVisor and OpenShell close disjoint columns**, which is the
-observation lesson 14 is built on. Pins the OpenShell version — it is alpha, and
-unpinned alpha tooling rots silently.
+observation the composition leaves are built on. Pins the OpenShell version — it is
+alpha, and unpinned alpha tooling rots silently.
+
+**`lesson-14-compose-gvisor-openshell`** and **`lesson-15-compose-kata-openshell`**
+— *documentation only.* The obvious next move is to stack OpenShell over gVisor or
+Kata on this host, and neither can be done here: OpenShell's chapter-2 delivery is
+its rootless-podman driver, and rootless podman cannot drive `runsc` (lesson 3 is
+rootful for exactly this reason) nor a containerd shim-v2 (lesson 4 uses nerdctl
+for exactly this reason). So each leaf is a README that explains the missing
+mechanism and points at the chapter where the composition runs for real — gVisor
+in lesson 16, Kata in lessons 17 and 19. Both are marked *documentation only* here
+and in the layout: no `main.py`, no box, no `lessons.json` row.
 
 ## Chapter 3 — Kubernetes
 
@@ -611,6 +643,8 @@ each one becomes declarative — mostly a single field.
 | 7 | `lesson-07-k8s-gvisor` | 30 min | `runtimeClassName: gvisor` — lesson 3 as one field |
 | 8 | `lesson-08-k8s-kata` | 45 min | `runtimeClassName: kata-qemu` — and chapter 2's second stack pays off |
 | 9 | `lesson-09-k8s-openshell` | 60 min | policy and audit at fan-out scale |
+| 16 | `lesson-16-compose-gvisor-openshell` | 45 min | **composition** — OpenShell over gVisor: Landlock silently vanishes |
+| 17 | `lesson-17-compose-kata-openshell` | 30 min | **composition** — OpenShell over Kata: the same policy holds |
 
 **`lesson-06-k8s`** — every control here already appeared in lesson 2; what the
 cluster adds is a scheduler and a declarative way to ask. `securityContext` at pod
@@ -653,6 +687,34 @@ accepts **one compute driver**, so this needs a separate config from lesson 5; a
 an OpenShell-owned pod spec re-pulls `:latest`, so a side-loaded image needs a
 non-`latest` tag to inherit `IfNotPresent`.
 
+**`lesson-16-compose-gvisor-openshell`** — the composition, and the tutorial's one
+real home for OpenShell-over-gVisor (chapters 2 and 4 can only document it).
+Kubernetes is where it finally has a mechanism: OpenShell's kubernetes driver
+selects the lower runtime per sandbox with a driver-config overlay that lands as
+the pod's `runtimeClassName: gvisor`. It reuses lesson 9's policy byte-for-byte and
+swaps only the runtime, so any row that moves moved because of gVisor. gVisor
+answers `ENOSYS` to `landlock()`, so the filesystem clause **silently loses its
+Landlock backing** — flagged by a HIGH `"Landlock Filesystem Sandbox Unavailable"`
+line in the audit trail. Measured on OpenShell 0.0.99 the finding is subtler than
+the folklore: `fs_policy_write` nonetheless stays **blocked**, because this driver
+*also* backs the read-only paths with a read-only root filesystem, so the lost
+layer is **masked** — the attack outcome is identical to the safe Kata stack and
+the audit trail is the only witness. That is the sharper lesson: a composed
+boundary can shed a layer with no visible effect, so *verify enforcement, do not
+infer it.* `policy-hard.yaml` (`hard_requirement`) is the fix — it refuses to start
+rather than run without the feature. Asserts `runtimeClassName` from the pod **and**
+the `4.19.0-gvisor` kernel from inside — never the flag. **This combination had
+never actually been executed upstream**, so
+it was reproduced on a live box before being written up.
+
+**`lesson-17-compose-kata-openshell`** — the positive half of the same finding: the
+same OpenShell policy stacked on Kata (`runtimeClassName: kata-qemu`) instead of
+gVisor, where it **holds**. `fs_policy_write` stays blocked because a real guest
+kernel ships Landlock and OpenShell's `landlock()` call succeeds inside the VM, and
+`hard_requirement` starts cleanly (the requirement is satisfiable) — the mirror of
+lesson 16's refuse-to-start. Asserts Kata by a guest kernel that differs from the
+node's, on the same shared box, one flag apart from lesson 16.
+
 ## Chapter 4 — OpenShift
 
 All four lessons share one box — installing single-node OpenShift takes longer than
@@ -668,6 +730,8 @@ proven end-to-end 2026-08-04.** Lessons 10–13 assume that cluster exists.
 | 11 | `lesson-11-openshift-scc` | 45 min | the cluster **refuses to run** an over-privileged agent |
 | 12 | `lesson-12-openshift-kata` | 60 min | Kata as a supported product, not a DIY install |
 | 13 | `lesson-13-openshift-openshell` | 60 min | policy and audit on OpenShift |
+| 18 | `lesson-18-compose-gvisor-openshell` | 15 min | *documentation only* — gVisor is not a supported OpenShift runtime; runs for real in lesson 16 |
+| 19 | `lesson-19-compose-kata-openshell` | 45 min | **composition** — OpenShell over Kata on the shipped product, through SCC admission |
 
 **`lesson-10-openshift-pod`** — start where chapter 3 started: the plain agent pod,
 on OpenShift instead of vanilla Kubernetes. Same manifest, same attack suite, and
@@ -704,8 +768,27 @@ step-for-step in [`infra/openshift-sno/REPRODUCE.md`](infra/openshift-sno/REPROD
 
 **`lesson-13-openshift-openshell`** — OpenShell on OpenShift, where it meets the SCC
 regime from lesson 11: a policy sandbox that itself needs privileges must satisfy
-admission control before it can enforce anything. The composition question of
-chapter 5, previewed on the platform where it matters commercially.
+admission control before it can enforce anything. The clean control for lesson 19,
+which stacks this same policy on Kata.
+
+**`lesson-18-compose-gvisor-openshell`** — *documentation only.* The companion to
+lesson 19 cannot be built here: gVisor is not a supported OpenShift runtime, so
+there is no `RuntimeClass gvisor` for OpenShell's driver to select (see *Why gVisor
+is absent from chapter 4*, above). A README that states the reason and points at
+lesson 16, where the gVisor composition runs for real. No `main.py`, no box.
+
+**`lesson-19-compose-kata-openshell`** — the composition on the platform an
+enterprise actually buys it on. Lesson 17 proved OpenShell-over-Kata on k3s; this
+runs the same stack on OpenShift's sandboxed-containers operator, where Kata is the
+product (`RuntimeClass kata`, one class not k3s's many) and OpenShell's policy
+engine must itself clear **SCC admission** — the privileged grant lesson 11 sets up
+and lesson 13 pays, now reaching this leaf too. The expected reading is lesson 17's:
+`fs_policy_write` **blocked**, because the operator's Kata guest ships Landlock.
+**Assert the VM from inside by `DMI=KVM` / virtio, never the kernel string** — Red
+Hat builds the guest kernel from the same RHEL base as the node's, so `uname -r`
+matches and a kernel-difference test returns a false "no VM" (Trap #12). It is the
+one expensive composition run: it neither provisions nor destroys the shared SNO
+cluster, and teardown (`infra/down.sh openshift-sno`) is a step you own.
 
 > [!note]
 > **Chapter 4 gate — CLEARED (2026-08-04).** Single-node OpenShift 4.18.49 was
@@ -723,28 +806,28 @@ chapter 5, previewed on the platform where it matters commercially.
 > (Red Hat builds it from the same RHEL base) — verify the VM by DMI/virtio, never
 > the kernel string.
 
-## Chapter 5 — Synthesis
+## Composition — distributed across the chapters
 
-| # | Lesson | Duration | The point |
-| :-- | :-- | :-- | :-- |
-| 14 | `lesson-14-compose-and-compare` | 75 min | what to actually deploy, and what stacking two boundaries costs |
+There is no Chapter 5. The composition — OpenShell stacked over a *lower* runtime —
+is demonstrated in the chapter whose boundary it composes, and documented, with the
+reason, where the mechanism forbids it (§ the chapter tables above). Three parts
+land as follows:
 
-**`lesson-14-compose-and-compare`** — three parts.
-
-1. **The table**, rendered from `results/*.json`: nine attacks down the side, every
-   rung across the top, every cell measured. Zero hand-entered values. Rungs that
-   were not run are reported as *not run*, never blank.
-2. **The composition experiment**, run rather than described. OpenShell **on
-   gVisor**: the filesystem-policy attack starts *succeeding* when it should fail,
-   and the audit trail carries a High-severity *"Running WITHOUT filesystem
-   restrictions"* finding — the policy silently stopped being enforced while
-   everything still looked like it worked. Then `hard_requirement`, which makes it
-   fail closed instead. Then OpenShell **on Kata**, where the same attack is
-   *blocked*, because a real guest kernel ships Landlock. The rule that
-   generalizes: **composition fails when the lower layer removes a kernel feature
-   the upper layer depends on.**
-3. **The decision table** — which boundary for which threat, at what cost, and when
-   two granularities beat two mechanisms stacked at one.
+1. **The cross-rung table**, rendered from `results/*.json` by
+   `infra/report/overall.py` (`results/overall.html`) — nine attacks down the side,
+   every rung across the top, every cell measured, zero hand-entered values.
+2. **The composition experiment**, run rather than described: OpenShell **on
+   gVisor** (lesson 16), where Landlock silently drops out (a High-severity
+   *"Landlock Filesystem Sandbox Unavailable"* audit finding) — and, measured on
+   OpenShell 0.0.99, the write it guarded stays *blocked* anyway because a read-only
+   rootfs masks the loss, so the danger is visible only in the audit trail; then
+   `hard_requirement`, which fails closed instead. OpenShell **on Kata** (lessons
+   17, 19), where Landlock is present and the clause is fully enforced. The rule
+   that generalizes: **composition fails when the lower layer removes a kernel
+   feature the upper layer depends on** — here silently, which is why the audit
+   trail and `hard_requirement` matter.
+3. **The decision table** — which boundary for which threat, at what cost — is
+   [`docs/decision-table.md`](docs/decision-table.md).
 
 ---
 
@@ -753,11 +836,14 @@ chapter 5, previewed on the platform where it matters commercially.
 | Chapter | Lessons | Duration |
 | :-- | --: | --: |
 | 1 — The agent with nothing in its way | 1 | 1 h 00 |
-| 2 — One host, four boundaries | 4 | 4 h 00 |
-| 3 — Kubernetes | 4 | 3 h 15 |
-| 4 — OpenShift | 4 | 3 h 45 |
-| 5 — Synthesis | 1 | 1 h 15 |
-| **Total** | **14** | **≈ 13 h 15** |
+| 2 — One host, four boundaries (+2 composition) | 6 | 4 h 30 |
+| 3 — Kubernetes (+2 composition) | 6 | 4 h 30 |
+| 4 — OpenShift (+2 composition) | 6 | 4 h 45 |
+| **Total** | **19** | **≈ 14 h 45** |
+
+19 leaves = **13 boundary lessons** (01–13) + **3 runnable composition leaves**
+(16, 17, 19) + **3 documentation-only composition leaves** (14, 15, 18). The
+documentation-only leaves have no box and no billable run.
 
 Infrastructure cost for the whole tutorial: roughly **€2–3**, provided `down.sh`
 is run.

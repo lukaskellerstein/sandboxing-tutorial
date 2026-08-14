@@ -58,6 +58,18 @@
       ]
     },
     {
+      "root": "tutorial/chapter-3-kubernetes/lesson-16-compose-gvisor-openshell",
+      "extraPaths": [
+        "tutorial/chapter-3-kubernetes/lesson-16-compose-gvisor-openshell/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/chapter-3-kubernetes/lesson-17-compose-kata-openshell",
+      "extraPaths": [
+        "tutorial/chapter-3-kubernetes/lesson-17-compose-kata-openshell/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
       "root": "tutorial/chapter-4-openshift/lesson-10-openshift-pod",
       "extraPaths": [
         "tutorial/chapter-4-openshift/lesson-10-openshift-pod/.venv/lib/python3.12/site-packages"
@@ -79,6 +91,12 @@
       "root": "tutorial/chapter-4-openshift/lesson-13-openshift-openshell",
       "extraPaths": [
         "tutorial/chapter-4-openshift/lesson-13-openshift-openshell/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/chapter-4-openshift/lesson-19-compose-kata-openshell",
+      "extraPaths": [
+        "tutorial/chapter-4-openshift/lesson-19-compose-kata-openshell/.venv/lib/python3.12/site-packages"
       ]
     }
   ]

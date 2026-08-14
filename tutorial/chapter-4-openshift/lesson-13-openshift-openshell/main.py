@@ -306,7 +306,7 @@ def main() -> None:
         print("\n  The kernel rows are the node's: this runs on ordinary runc, so lesson 12's column")
         print("  is wide open again. gVisor and Kata close the kernel and leave policy untouched;")
         print("  OpenShell does the reverse. Disjoint columns — which is what makes stacking them")
-        print("  tempting, and what lesson 14 measures.")
+        print("  tempting, and what lesson 19 measures on this cluster's Kata (lesson 16 on gVisor).")
         print("\n  OpenShift adds a wrinkle the other rungs do not have: the policy engine itself had")
         print("  to be granted the privileged SCC before it could enforce anything. A control plane")
         print("  that refuses privilege refuses it to your security tooling too.")

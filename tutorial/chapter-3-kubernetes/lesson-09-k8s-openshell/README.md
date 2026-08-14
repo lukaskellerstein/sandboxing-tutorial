@@ -56,6 +56,13 @@ helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
 Order matters: a gateway installed before the CRD comes up healthy and then fails
 **every** sandbox create.
 
+Component 1 is not OpenShell-specific. The **Agent Sandbox** controller is the
+vendor-neutral, Kubernetes-native *orchestration* layer — the `Sandbox` API that
+*selects* a runtime and runs the pod, but adds **no isolation of its own**. It is a
+different axis from every boundary this tutorial scores;
+[`docs/orchestration.md`](../../../docs/orchestration.md) explains where it fits and
+why it has no scored lesson.
+
 > [!note]
 > The asset is `sandbox.yaml`. Guides written against agent-sandbox v0.5.3 and earlier
 > say `manifests.yaml`, which no longer exists — a 404 that reads like a network
@@ -200,9 +207,10 @@ building toward. gVisor and Kata closed the kernel column and left the policy co
 untouched. OpenShell does the reverse. **They are strong in disjoint columns.**
 
 Which makes stacking them the obvious next move — and
-[`lesson-14-compose-and-compare`](../../../syllabus.md) measures what actually happens when
-you do. This lesson is its clean **control**: nothing is stacked underneath, and
-Landlock is genuinely available and genuinely enforced on this real kernel.
+[`lesson-16-compose-gvisor-openshell`](../lesson-16-compose-gvisor-openshell/) measures
+what actually happens when you do (and [`lesson-17`](../lesson-17-compose-kata-openshell/)
+the Kata case). This lesson is their clean **control**: nothing is stacked underneath,
+and Landlock is genuinely available and genuinely enforced on this real kernel.
 
 ## Next
 

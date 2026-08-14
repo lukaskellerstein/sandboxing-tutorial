@@ -282,6 +282,6 @@ four network attacks closed once the agent is online. That is
 [lesson 5](../lesson-05-container-openshell/), which closes them on ordinary `runc`
 with no kernel boundary whatsoever, and with the network still on.
 
-And the difference that only surfaces in lesson 14: a real guest kernel **ships
+And the difference that only surfaces in lesson 17: a real guest kernel **ships
 Landlock**. gVisor answers `ENOSYS` to it, so a policy engine stacked on gVisor
-silently stops enforcing filesystem rules while still reporting healthy.
+silently stops enforcing filesystem rules while still reporting healthy (lesson 16).

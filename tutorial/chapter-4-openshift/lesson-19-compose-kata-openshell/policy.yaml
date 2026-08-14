@@ -1,0 +1,48 @@
+# Lesson 19's policy — lesson 13's, unchanged, on a Kata sandbox instead of runc.
+#
+# Byte-for-byte lesson 13's policy (which is lesson 9's, adapted for the stock ubi9 image). Lesson 13
+# applied it to an OpenShell sandbox on ordinary runc; this rung applies the SAME file to a sandbox
+# whose `runtimeClassName` is `kata`, and the filesystem clause holds — because the operator's Kata
+# guest ships Landlock. Compare lesson 16, where the identical idea on gVisor loses that clause.
+#
+# The endpoint host is a placeholder main.py substitutes at run time. (The token appears exactly once,
+# in `host:` — keep it that way.)
+#
+# Applied at sandbox CREATE; the static sections below cannot be hot-reloaded.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  # /etc is read-only — the path `fs_policy_write` writes (PROBE_READONLY_PATH=/etc/agent-probe-canary)
+  # and expects refused. `/app` is deliberately NOT here: the sandbox runs stock ubi9/python-312, which
+  # has no /app — naming a path that does not exist is how a policy file rots into something unappliable
+  # (lesson 13's note).
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # best_effort. On gVisor this fails open (lesson 16); on Kata it makes no difference, because the
+  # guest kernel provides Landlock. Part 4 confirms hard_requirement also starts here.
+  compatibility: best_effort
+
+# NOTE the absence of a `process:` block — lesson 13 explains it: stock ubi9/python-312 has no
+# `sandbox` user (it runs as uid 1001), and on OpenShift the uid is the SCC's to assign anyway.
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest # L7: OpenShell parses HTTP, so rules can name methods
+        enforcement: enforce # `audit` would record without blocking
+        access: read-only # GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE denied
+    binaries:
+      # /usr/bin/curl is present in ubi9/python-312 — verified before relying on it, because a policy
+      # naming a binary that does not exist denies everything and looks exactly like it working.
+      - { path: /usr/bin/curl }

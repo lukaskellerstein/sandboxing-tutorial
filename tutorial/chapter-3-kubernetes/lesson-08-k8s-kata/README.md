@@ -292,9 +292,9 @@ buys **nothing** on attacks 2, 4, 5, 6 or 9: Kata does not read HTTP, does not k
 which binary opened a socket, and writes nothing down.
 
 One difference from lesson 7 matters later. This is a **real** kernel, so it ships
-Landlock — which gVisor's user-space kernel answers `ENOSYS` to. Lesson 14 stacks a
-policy engine on both and finds the same composition works here and *silently fails*
-there.
+Landlock — which gVisor's user-space kernel answers `ENOSYS` to. Lesson 17 stacks a
+policy engine on this same Kata runtime and the composition *holds*; lesson 16 stacks
+it on gVisor and it *silently fails*.
 
 ## Next
 

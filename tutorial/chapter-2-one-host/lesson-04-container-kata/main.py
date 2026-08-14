@@ -678,7 +678,7 @@ def main() -> None:
     print("\n  Exactly the same rows gVisor left open, because Kata is strong in the same column:")
     print("  neither knows WHICH binary made a request or WHICH method it used, and neither writes")
     print("  anything down. That is lesson 5.")
-    print("\n  The difference that only matters in lesson 14: this is a REAL kernel, so it ships")
+    print("\n  The difference that only matters in lesson 17: this is a REAL kernel, so it ships")
     print("  Landlock. gVisor's user-space kernel answers ENOSYS to it — and a policy engine layered")
     print("  on top then silently stops enforcing filesystem rules while still looking healthy.")
     print("\n  And note which of those rows Part 3b did NOT move. Firecracker is a different machine")

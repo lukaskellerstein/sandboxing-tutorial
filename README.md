@@ -17,7 +17,9 @@ isolation, so each step is a measured comparison rather than a standalone demo:
 
 gVisor and OpenShell are strong in **disjoint** columns — kernel surface versus
 per-binary/L7 policy and auditing — which is what makes composing them
-interesting, and occasionally surprising.
+interesting, and occasionally surprising. **Which boundary to reach for, at what
+cost, and when to compose two of them** is the one-page conclusion in
+[`docs/decision-table.md`](docs/decision-table.md).
 
 > [!note]
 > **Status: syllabus agreed, lessons not written.** The repo layout, tooling and
@@ -40,8 +42,9 @@ measured:
   proving what *could* be reached.
 - **Kata Containers cannot run on an Apple Silicon Mac at all.**
 
-Chapters 1–3 and 5 run on Scaleway **VMs** (€0.028–0.055/hr, up in under a minute).
-Only chapter 4 needs **bare metal**, because OpenShift sandboxed containers do.
+Chapters 1–3 run on Scaleway **VMs** (€0.028–0.055/hr, up in under a minute),
+composition leaves included. Only chapter 4 needs **bare metal**, because OpenShift
+sandboxed containers do.
 Which lesson gets which box is declared once, in
 [`infra/terraform/lessons.json`](infra/terraform/lessons.json), and applied by
 Terraform.
