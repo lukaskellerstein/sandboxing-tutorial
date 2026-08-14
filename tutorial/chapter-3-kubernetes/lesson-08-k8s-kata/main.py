@@ -502,9 +502,9 @@ def main() -> None:
         print("  and buys nothing on attacks 2, 4, 5, 6 or 9. Kata does not read HTTP, does not know")
         print("  which binary opened a socket, and writes nothing down. Lesson 9 does all three.")
         print("\n  One difference from lesson 7 matters later: this is a REAL kernel, so it ships")
-        print("  Landlock, which gVisor's user-space kernel answers ENOSYS to. Lesson 14 stacks a")
-        print("  policy engine on both and finds that the same composition works here and silently")
-        print("  fails there.")
+        print("  Landlock, which gVisor's user-space kernel answers ENOSYS to. Lesson 17 stacks a")
+        print("  policy engine on this same Kata runtime and the composition holds; lesson 16 stacks")
+        print("  it on gVisor and it silently fails.")
 
         card.save(
             RESULTS,

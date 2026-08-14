@@ -93,7 +93,7 @@ def probe_env(gateway_ip: str) -> dict[str, str]:
         "PROBE_GROUPS": GROUPS,
         "PROBE_NODE_KERNEL": platform.release(),
         # Writable on purpose: this row must report "is there a path policy", not "is the rootfs
-        # read-only". Lesson 14's Landlock experiment depends on it meaning that.
+        # read-only". Lesson 16's Landlock experiment depends on it meaning that.
         "PROBE_READONLY_PATH": "/tmp/agent-probe-canary",
         "PROBE_GATEWAY_URL": f"http://{gateway_ip}:{k8s.GATEWAY_PORT}",
     }

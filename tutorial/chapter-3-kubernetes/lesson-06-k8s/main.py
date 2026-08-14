@@ -116,7 +116,7 @@ def probe_env(gateway_ip: str) -> dict[str, str]:
     path on the read-only rootfs, and ``fs_policy_write`` would then report BLOCKED — crediting this
     rung with a filesystem *policy* it does not have, when all that happened is that a mount was
     read-only. Pointed at a writable path the row reads REACHED, which is the honest answer: nothing
-    here judges paths. Lesson 14's Landlock experiment depends on that row meaning what it says.
+    here judges paths. Lesson 16's Landlock experiment depends on that row meaning what it says.
     """
     env = {
         "PROBE_GROUPS": GROUPS,

@@ -721,8 +721,10 @@ def policy() -> Iterator[Finding]:
         scoped = "copy-failed"
     yield Finding("binary_scoped", scoped, not str(scoped).startswith("2"), "policy", detail="unlisted binary")
 
-    # Path-level filesystem policy (Landlock). The probe that regresses to ALLOWED when gVisor's
-    # user-space kernel answers ENOSYS to Landlock — the silent composition failure lesson 14 shows.
+    # Path-level filesystem policy (Landlock). The probe lesson 16 watches when this policy is stacked
+    # on gVisor: gVisor answers ENOSYS to Landlock, so the clause loses its Landlock backing (a HIGH
+    # audit finding). Whether the write then flips to ALLOWED depends on whether a read-only mount also
+    # covers the path — on OpenShell's k8s driver a read-only rootfs does, so it stays blocked.
     try:
         with open(READONLY_PATH, "w") as fh:
             fh.write("")

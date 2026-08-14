@@ -148,9 +148,9 @@ the container hardening of lesson 2, it is a different axis layered beside it.
 
 That axis is the observation the whole tutorial is built toward: **gVisor and
 OpenShell are strong in disjoint columns.** Composing them is therefore tempting —
-and lesson 14 shows it
-silently failing, because gVisor answers `ENOSYS` to Landlock and the filesystem
-half of `policy.yaml` stops being enforced while everything still looks healthy.
+and lesson 16 shows it silently failing, because gVisor answers `ENOSYS` to Landlock
+and the filesystem half of `policy.yaml` stops being enforced while everything still
+looks healthy.
 `landlock.compatibility: hard_requirement` is what makes that fail closed instead.
 
 > OpenShell is **alpha**. The run prints its version and records it in

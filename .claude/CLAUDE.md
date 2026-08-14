@@ -61,11 +61,24 @@ not fixed**. Report it as such rather than shipping the green run.
 
 ## sandboxing-tutorial at a glance
 
-- **Status: chapters 1–4 built (2026-08-10).** Lessons 01–13 are written and green:
-  01–09 on Scaleway VMs, 10–13 on single-node OpenShift 4.18.49 on bare metal.
-  **Chapter 5 is unwritten.** The syllabus is still the source of truth for what
-  lessons exist and in what order, and it is written *before* any lesson directory —
-  do not create a leaf the syllabus does not list.
+- **Status: chapters 1–4 built (2026-08-10); composition leaves added (spec 04, 2026-08-14).**
+  Lessons 01–13 are written and green: 01–09 on Scaleway VMs, 10–13 on single-node
+  OpenShift 4.18.49 on bare metal. **Chapter 5 is dissolved** — composition is now
+  demonstrated in-chapter: **lessons 16, 17 are runnable and green on `chapter-03-k8s`**
+  (verified 2026-08-14), **lesson 19 is written but UNVERIFIED** (needs the human-owned
+  SNO cluster), and **lessons 14, 15, 18 are documentation-only README stubs** (no
+  `main.py`, no box, not in `lessons.json`). The syllabus is still the source of truth
+  for what lessons exist and in what order, and it is written *before* any lesson
+  directory — do not create a leaf the syllabus does not list.
+- **The composition finding (measured 2026-08-14, and it diverges from the prior art).**
+  OpenShell-over-gVisor (lesson 16) was the never-run combo. On OpenShell 0.0.99 the
+  prior art's predicted `fs_policy_write → ALLOWED` does **not** reproduce: gVisor drops
+  Landlock (HIGH `landlock-unavailable` audit finding), but the k8s driver's read-only
+  ROOT FILESYSTEM still blocks the write, so the scored result equals the safe Kata
+  stack — the audit trail is the only witness, and `hard_requirement` fails closed.
+  OpenShell-over-Kata (lessons 17, 19) keeps Landlock. The tutorial's headline was
+  reframed from "the write flips to ALLOWED" to "Landlock silently disappears; verify
+  via the audit trail or fail closed".
 - **One shared box per chapter (2026-08-13), declared with `box` in `lessons.json`.**
   `lib.sh`'s `lesson_box()` is the only place that resolves it; every driver calls it
   before touching state, ssh or rsync. **`./down.sh <a shared lesson>` refuses** — the

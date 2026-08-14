@@ -162,7 +162,8 @@ That is the point the whole ladder has been building to:
 > gVisor and Kata close the kernel column and leave policy untouched. OpenShell does the
 > reverse. They are strong in **disjoint** columns.
 
-Which is what makes stacking them tempting — and what lesson 14 measures.
+Which is what makes stacking them tempting — and what lesson 16 measures on gVisor,
+and lesson 19 on this same cluster's Kata.
 
 ## Traps
 

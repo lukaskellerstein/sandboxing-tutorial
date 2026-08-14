@@ -183,7 +183,7 @@ isolation will change that.
 
 - [`lesson-08-k8s-kata`](../lesson-08-k8s-kata/) reaches the same kernel result by a
   completely different route — a real guest kernel in a per-pod VM — and **keeps
-  Landlock**, which gVisor drops. That difference decides lesson 14's composition
-  experiment.
+  Landlock**, which gVisor drops. That difference decides the composition experiment:
+  lesson 16 stacks OpenShell on gVisor (Landlock gone), lesson 17 on Kata (it holds).
 - [`lesson-09-k8s-openshell`](../lesson-09-k8s-openshell/) is the rung that closes
   what this one leaves open.

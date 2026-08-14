@@ -1,0 +1,35 @@
+# Lesson 19's fail-closed policy — policy.yaml with ONE line changed.
+#
+# The only difference from policy.yaml is `landlock.compatibility: hard_requirement` below. On gVisor
+# (lesson 16) that word makes the sandbox refuse to start; on the operator's Kata guest it changes
+# nothing observable, because Landlock is genuinely present. Part 4 confirms the create succeeds.
+#
+# Supplied at `sandbox create`, never through `policy set` — the Landlock section is locked at startup.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # The one line that differs from policy.yaml. It only bites on a runtime that lacks Landlock (gVisor);
+  # Kata provides it, so the sandbox starts.
+  compatibility: hard_requirement
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }

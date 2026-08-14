@@ -79,7 +79,7 @@ class Finding:
 
 @dataclass
 class Scorecard:
-    """A rung's full result — the currency every lesson reports and lesson 14 renders the table from."""
+    """A rung's full result — the currency every lesson reports and infra/report/overall.py builds the table from."""
 
     findings: list[Finding] = field(default_factory=list)
 

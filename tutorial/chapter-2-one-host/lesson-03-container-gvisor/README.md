@@ -182,8 +182,9 @@ HTTP method it used, and any record that it happened.
 
 `sys_module_count` at 0 is a kernel boundary bought with a *reimplemented* kernel.
 [Lesson 4](../lesson-04-container-kata/) buys the same result with a **real** guest
-kernel in a per-container VM, and the difference between the two only shows up in
-lesson 14: gVisor answers `ENOSYS` to Landlock, Kata does not.
+kernel in a per-container VM, and the difference between the two only shows up in the
+composition leaves: gVisor answers `ENOSYS` to Landlock (lesson 16), Kata does not
+(lesson 17).
 
 The rows gVisor leaves open are not weaker versions of attack 8 — they are a
 different axis, and [lesson 5](../lesson-05-container-openshell/) is where they

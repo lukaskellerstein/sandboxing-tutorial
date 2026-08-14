@@ -16,7 +16,7 @@ know which compute driver is underneath it.
 
 Note what this rung does NOT close: it runs on ordinary runc, so the host kernel is fully exposed and
 attack 8 works again. **gVisor and OpenShell are strong in disjoint columns** — that observation is
-what lesson 14 is built on, and this lesson is its clean control: nothing is stacked underneath.
+what lesson 16 is built on, and this lesson is its clean control: nothing is stacked underneath.
 
     # 1. start the box (once):
     cd ../../../infra && ./up.sh lesson-09-k8s-openshell     # or press 'u' in the sbx-tui panel
@@ -323,14 +323,14 @@ def main() -> None:
         blocked, applicable = card.tally()
         print(f"\n  boundaries that held: {blocked}/{applicable}")
 
-        banner("Part 4 — What is still open (and why lesson 14 exists)")
+        banner("Part 4 — What is still open (and why lesson 16 exists)")
         for f in card.reached():
             print(f"    {f['name']:<20} {f['value']}")
         print("\n  The kernel rows are wide open, and that is not a defect — it is the finding. This")
         print("  runs on ordinary runc, so attack 8 works exactly as it did in lesson 6. gVisor and")
         print("  Kata closed that column and left this one untouched; OpenShell does the reverse.")
         print("  The two are strong in DISJOINT columns, which is what makes stacking them tempting")
-        print("  — and lesson 14 measures what happens when you do.")
+        print("  — and lesson 16 measures what happens when you do.")
 
         card.save(
             RESULTS,
