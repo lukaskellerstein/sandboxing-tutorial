@@ -4,7 +4,7 @@
     python3 infra/report/overall.py
     python3 infra/report/overall.py --open
 
-Reads ``tutorial/*/lesson-*/report.json`` — the files ``render.py`` writes next to each lesson — and
+Reads ``tutorial/*/*/lesson-*/report.json`` — the files ``render.py`` writes next to each lesson — and
 produces ``results/overall.html``: the ladder as a matrix, plus what changed between consecutive
 rungs.
 
@@ -27,6 +27,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import ids  # the id<->path resolver, shared with render.py
+
+# Reuse the RECORDED glyphs/labels so the two views never drift. Imported by name, not as the `render`
+# module, because this file defines its own `render()` which would shadow the module.
+from render import LOGGED, NO_SENSOR, NOT_LOGGED, RECORDED_GLYPH, RECORDED_LABEL
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TUTORIAL = REPO_ROOT / "tutorial"
 OUT = REPO_ROOT / "results" / "overall.html"
@@ -42,17 +48,15 @@ def esc(value: object) -> str:
 
 
 def short(lesson: str) -> str:
-    parts = lesson.split("-", 2)
-    return f"{parts[1]} {parts[2]}" if len(parts) > 2 else lesson
+    return ids.short(lesson)
 
 
 def load_reports() -> list[dict]:
     reports = []
-    # `lesson-*`, NOT `lesson-0*`. The narrower glob silently dropped every lesson from 10 up:
-    # the page rendered fine and simply omitted chapter 4, which is the worst kind of quiet.
-    # `*/lesson-*` because leaves live under their chapter folder; sorting by full path keeps
-    # lesson order, since chapter folders sort in chapter order.
-    for folder in sorted(TUTORIAL.glob("*/lesson-*")):
+    # ids.iter_leaves() returns every leaf as (id, path) already ordered by (phase, chapter, lesson)
+    # — ladder order — which is what the matrix and the diffs want. A leaf with no report.json yet is
+    # simply skipped, the honest answer, rather than appearing in a comparison whose page nobody saw.
+    for _lid, folder in ids.iter_leaves():
         path = folder / "report.json"
         if not path.exists():
             continue
@@ -94,6 +98,55 @@ def matrix(reports: list[dict]) -> str:
   <thead><tr><th></th><th>probe</th>{head}</tr></thead>
   <tbody>{"".join(rows)}</tbody>
   <tfoot><tr><td></td><th>attacks blocked</th>{totals}</tr></tfoot>
+</table></div>"""
+
+
+def recorded_matrix(reports: list[dict]) -> str:
+    """The phase-2 view: per attack, was it recorded on each rung? The mirror of ``matrix`` on the
+    orthogonal axis — glyphs, never the verdict green/red — so the two ladders read as two questions."""
+    order: list[str] = []
+    for r in reports:
+        for f in r["findings"]:
+            if f["verdict"] != INFO and f["name"] not in order:
+                order.append(f["name"])
+    head = "".join(f"<th>{esc(short(r['lesson']))}</th>" for r in reports)
+    rows = []
+    for name in order:
+        cells, why, num = [], "", ""
+        for r in reports:
+            found = next((f for f in r["findings"] if f["name"] == name), None)
+            if found is None or found["verdict"] == INFO:
+                cells.append('<td class="info">·</td>')
+                continue
+            why, num = found["why"], found["attack"]
+            rec = found.get("recorded") or NO_SENSOR
+            alarm = found["verdict"] == SUCCEEDED and rec == NOT_LOGGED
+            cls = "rec-" + rec.lower().replace("_", "-") + (" rec-alarm" if alarm else "")
+            cells.append(f'<td class="{cls}" title="{esc(RECORDED_LABEL[rec])}">{RECORDED_GLYPH[rec]}</td>')
+        rows.append(
+            f'<tr><td class="num">{esc(num)}</td>'
+            f'<th class="probe">{esc(name)}<span class="why">{esc(why)}</span></th>'
+            f"{''.join(cells)}</tr>"
+        )
+    # Two totals per rung, from the counts render.py already resolved: the coverage, and the number a
+    # reader should act on — attacks that SUCCEEDED and left no record, sensor or no sensor. A
+    # report.json written before those counts existed shows `?` here rather than a re-derived number
+    # (main() names it and says to re-render); a silent 0 would read as full coverage.
+    coverage, breaches = [], []
+    for r in reports:
+        if "recorded_counts" not in r:
+            coverage.append('<td class="total" title="stale report.json — re-render">?</td>')
+            breaches.append('<td class="total" title="stale report.json — re-render">?</td>')
+            continue
+        coverage.append(f'<td class="total">{r["logged"]}/{sum(r["recorded_counts"].values())}</td>')
+        n = r["unrecorded_breaches"]
+        breaches.append(f'<td class="total{" alarm" if n else ""}">{n}</td>')
+    return f"""
+<div class="scroll"><table class="matrix recorded">
+  <thead><tr><th></th><th>probe</th>{head}</tr></thead>
+  <tbody>{"".join(rows)}</tbody>
+  <tfoot><tr><td></td><th>attacks recorded</th>{"".join(coverage)}</tr>
+  <tr><td></td><th>succeeded, unrecorded</th>{"".join(breaches)}</tr></tfoot>
 </table></div>"""
 
 
@@ -150,16 +203,16 @@ def diffs(reports: list[dict]) -> str:
 CSS = """
 :root { color-scheme: light dark;
   --bg:#fff; --fg:#1a1a1a; --dim:#666; --line:#e3e3e3; --card:#fafafa;
-  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; }
+  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; --teal:#0f766e; }
 @media (prefers-color-scheme: dark) { :root {
   --bg:#14161a; --fg:#e8e8ea; --dim:#9a9aa2; --line:#2a2d34; --card:#1b1e24;
-  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; } }
+  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; --teal:#5eead4; } }
 :root[data-theme="dark"] {
   --bg:#14161a; --fg:#e8e8ea; --dim:#9a9aa2; --line:#2a2d34; --card:#1b1e24;
-  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; }
+  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; --teal:#5eead4; }
 :root[data-theme="light"] {
   --bg:#fff; --fg:#1a1a1a; --dim:#666; --line:#e3e3e3; --card:#fafafa;
-  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; }
+  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; --teal:#0f766e; }
 * { box-sizing:border-box; }
 body { margin:0; padding:2rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
   font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -183,7 +236,17 @@ td.blocked, td.succeeded, td.info { text-align:center; font-size:.65rem; font-we
 td.blocked { color:var(--ok); background:var(--okbg); }
 td.succeeded { color:var(--bad); background:var(--badbg); }
 td.info { color:var(--dim); }
+.matrix.recorded td[class^="rec-"] { text-align:center; font-size:1rem; }
+td.rec-logged { color:var(--teal); }
+td.rec-not-logged { color:var(--teal); }
+td.rec-no-sensor { color:var(--dim); background:var(--card); }
+td.rec-alarm { background:var(--badbg); color:var(--bad); }
+.rec-glyph { font-size:1rem; }
+.rec-glyph.rec-logged { color:var(--teal); }
+.rec-glyph.rec-not-logged { color:var(--teal); }
+.rec-glyph.rec-no-sensor { color:var(--dim); }
 .matrix tfoot td.total { text-align:center; font-weight:700; }
+.matrix tfoot td.total.alarm { color:var(--bad); }
 .matrix tfoot th, .matrix tfoot td { border-top:2px solid var(--line); border-bottom:none; }
 .changes .tag { font-size:.68rem; letter-spacing:.05em; font-weight:700; white-space:nowrap; width:7rem; }
 .changes tr.blocked .tag { color:var(--ok); }
@@ -199,6 +262,43 @@ a { color:var(--accent); }
 def render(reports: list[dict]) -> str:
     stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M %Z")
     listed = ", ".join(short(r["lesson"]) for r in reports) or "none"
+    # Group by phase (the leading digit of the id). Phase 1 is the attack ladder — "did the boundary
+    # hold?"; phase 2 is the RECORDED coverage — "would you ever know it was tried?". Same rungs, two
+    # orthogonal questions, so they get two sections rather than one crowded table.
+    phase1 = [r for r in reports if r["lesson"].split(".")[0] == "1"]
+    phase2 = [r for r in reports if r["lesson"].split(".")[0] == "2"]
+
+    ladder = (
+        f"""<h2>Phase 1 — the ladder, with the network a real agent needs</h2>
+<p class="note"><strong>BLOCKED</strong> = the boundary stopped the attack.
+<strong>SUCCEEDED</strong> = the attack got what it wanted. Hover a cell for the raw reading.<br>
+Every rung is measured with the network on, because that is the only configuration that describes
+a deployment anyone ships: an agent that cannot reach a model API is not an agent. Read the network
+rows across the row — the container, gVisor and Kata all leave them open, because none of the three
+reads HTTP, and a stronger <em>kernel</em> boundary buys nothing on that axis. Only OpenShell closes
+them, with the network still on.</p>
+{matrix(phase1)}
+<h2>What changed, rung by rung</h2>
+<p class="note">The rows that stay open are the reason the next lesson exists.</p>
+{diffs(phase1)}"""
+        if phase1
+        else ""
+    )
+
+    coverage = (
+        f"""<h2>Phase 2 — was it recorded?</h2>
+<p class="note">The observability ladder runs <em>backwards</em> to the isolation ladder: a host sensor
+sees everything on runc, only the sentry under gVisor, and <strong>nothing inside a Kata guest</strong>.
+<span class="rec-glyph rec-logged">{RECORDED_GLYPH[LOGGED]}</span> logged &nbsp;
+<span class="rec-glyph rec-not-logged">{RECORDED_GLYPH[NOT_LOGGED]}</span> crossed a sensor, unrecorded &nbsp;
+<span class="rec-glyph rec-no-sensor">{RECORDED_GLYPH[NO_SENSOR]}</span> no sensor can see it. Hover a cell.<br>
+The footer counts each rung's coverage, and beneath it the attacks that <strong>succeeded and left no
+record</strong> — the figure to act on; each lesson's own <code>report.html</code> names them.</p>
+{recorded_matrix(phase2)}"""
+        if phase2
+        else ""
+    )
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -206,25 +306,12 @@ def render(reports: list[dict]) -> str:
 <style>{CSS}</style></head>
 <body><div class="wrap">
 <h1>Sandboxing tutorial — overall</h1>
-<p class="sub">Generated {esc(stamp)} from <code>tutorial/*/lesson-*/report.json</code>.
+<p class="sub">Generated {esc(stamp)} from <code>tutorial/*/*/lesson-*/report.json</code>.
 Included: {esc(listed)}.<br>
-A <em>low</em> score is correct for lesson 1 — it is the no-sandbox baseline, and the attacks
-succeeding there are what everything else is measured against.
-Each probe is explained in <code>ATTACKS.md</code>.</p>
-
-<h2>The ladder — with the network a real agent needs</h2>
-<p class="note"><strong>BLOCKED</strong> = the boundary stopped the attack.
-<strong>SUCCEEDED</strong> = the attack got what it wanted. Hover a cell for the raw reading.<br>
-Every rung is measured with the network on, because that is the only configuration that describes
-a deployment anyone ships: an agent that cannot reach a model API is not an agent. Read the network
-rows across the row — the container, gVisor and Kata all leave them open, because none of the three
-reads HTTP, and a stronger <em>kernel</em> boundary buys nothing on that axis. Only lesson 5 closes
-them, with the network still on.</p>
-{matrix(reports)}
-<h2>What changed, rung by rung</h2>
-<p class="note">The rows that stay open are the reason the next lesson exists.</p>
-{diffs(reports)}
-
+A <em>low</em> score is correct for the no-sandbox baseline (1.1.1) — the attacks succeeding there are
+what everything else is measured against. Each probe is explained in <code>ATTACKS.md</code>.</p>
+{ladder}
+{coverage}
 </div></body></html>
 """
 
@@ -232,7 +319,7 @@ them, with the network still on.</p>
 def main() -> None:
     reports = load_reports()
     if not reports:
-        print("  no tutorial/*/lesson-*/report.json yet — run a lesson first")
+        print("  no tutorial/*/*/lesson-*/report.json yet — run a lesson first")
         return
     # A card written before the two-mode split carries no `mode`, so it cannot be placed in either
     # matrix and would simply not appear — a report that quietly drops a rung reads as "that rung
@@ -240,6 +327,11 @@ def main() -> None:
     for r in reports:
         if not r.get("mode"):
             print(f"  WARNING: {r['lesson']} has no mode — stale card, omitted from both ladders. Re-run it.")
+        if "recorded_counts" not in r:
+            print(
+                f"  WARNING: {r['lesson']}'s report.json predates the RECORDED totals — its coverage shows "
+                f"as `?`. Re-render it: python3 infra/report/render.py {r['lesson']}"
+            )
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(render(reports), encoding="utf-8")
     print(f"  {OUT.relative_to(REPO_ROOT)}  ({len(reports)} lesson{'' if len(reports) == 1 else 's'})")

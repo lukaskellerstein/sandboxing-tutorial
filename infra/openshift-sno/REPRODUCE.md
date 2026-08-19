@@ -411,13 +411,13 @@ in the sandbox   KERNEL=5.14.0-427.138.1.el9_4.x86_64   DMI_PRODUCT=KVM  DMI_VEN
 the node         KERNEL=5.14.0-427.138.1.el9_4.x86_64   24 cpu   198 GB
 ```
 
-A "different kernel ⇒ it is a VM" test — which is exactly what chapter 3's lesson 8 uses on
+A "different kernel ⇒ it is a VM" test — which is exactly what chapter 3's lesson 1.3.3 uses on
 k3s — returns **no VM** here. It is a false negative on the rung that isolates most
 thoroughly. Assert by DMI, virtio and the CPU/memory gap.
 
 Worth noting the mirror image: on k3s (chapter 3) the Kata guest exposes **no DMI at all**
 while its kernel *does* differ. Neither witness works on both clusters, which is why
-lesson 8's assertion takes either one.
+lesson 1.3.3's assertion takes either one.
 
 ### SCC admission, re-proven
 

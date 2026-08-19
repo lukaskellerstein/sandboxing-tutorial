@@ -2,19 +2,19 @@
 """The headless core: one place that knows how to create, watch, stop and destroy this repo's boxes.
 
     ./ctl.py status                     what exists, what is running, what it costs
-    ./ctl.py up lesson-04-container-kata
+    ./ctl.py up 1.2.3
     ./ctl.py up openshift-sno --from kata
-    ./ctl.py run lesson-04-container-kata
+    ./ctl.py run 1.2.3
     ./ctl.py logs openshift-sno -f
     ./ctl.py stop openshift-sno
-    ./ctl.py timings lesson-04-container-kata   what past runs say each stage costs
-    ./ctl.py down lesson-04-container-kata --yes
+    ./ctl.py timings 1.2.3   what past runs say each stage costs
+    ./ctl.py down 1.2.3 --yes
     ./ctl.py audit                      ask the ACCOUNT what is still billable
     ./ctl.py reconcile --prune          drop state files naming boxes the account no longer has
 
 It **drives the shell scripts, it does not replace them.** `up.sh`, `run.sh`, `down.sh` and
 `openshift-sno/install.sh` stay independently runnable and are still the tutorial's real interface —
-a reader who types `./up.sh lesson-03-container-gvisor` must get exactly what they always got. This
+a reader who types `./up.sh 1.2.2` must get exactly what they always got. This
 adds three things those scripts cannot give themselves: a detached run that outlives the terminal,
 one machine-readable answer to "where is it", and a durable per-run log.
 
@@ -64,7 +64,7 @@ LESSONS_JSON = INFRA / "lessons.json"
 ACCOUNT_CACHE = STATE / ".account.json"
 
 #: The one target that is a cluster rather than a lesson box: it has its own driver, its own stage
-#: list, and it is shared by lessons 10-13 rather than owned by any of them.
+#: list, and it is shared by lessons 1.4.1–1.4.4 rather than owned by any of them.
 CLUSTER = "openshift-sno"
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_NOOP = 0, 1, 2, 4
@@ -158,6 +158,35 @@ def box_of(target: str) -> str:
     return lessons().get(target, {}).get("box", target)
 
 
+def leaf_dir(target: str) -> Path | None:
+    """The leaf directory a dotted id (``P.C.L``) resolves to, or ``None`` for zero/many matches.
+
+    The tree is the only id↔path source; this is ctl.py's copy of ``lib.sh``'s ``lesson_relpath`` and
+    ``report/ids.py``'s ``leaf_for_id`` — kept local so ctl.py stays one self-contained file. The id
+    is computed from folder positions, never stored twice.
+    """
+    try:
+        p, c, lesson = target.split(".")
+        pad = f"{int(lesson):02d}"
+    except ValueError:
+        return None
+    matches = [d for d in REPO.glob(f"tutorial/phase{p}-*/chapter-{c}-*/lesson-{pad}-*") if d.is_dir()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def leaf_ids() -> list[str]:
+    """Every leaf's dotted id, derived from the tree — the inverse of ``leaf_dir`` over all leaves."""
+    out: list[str] = []
+    for d in (REPO / "tutorial").glob("phase*-*/chapter-*-*/lesson-*-*"):
+        if not d.is_dir():
+            continue
+        p = d.parent.parent.name.removeprefix("phase").split("-", 1)[0]
+        c = d.parent.name.removeprefix("chapter-").split("-", 1)[0]
+        lesson = str(int(d.name.removeprefix("lesson-").split("-", 1)[0]))
+        out.append(f"{p}.{c}.{lesson}")
+    return out
+
+
 def scrub(stage: dict) -> dict:
     """A stage without stages.json's `//`-prefixed comment keys.
 
@@ -225,7 +254,7 @@ def run_op(events: list[dict]) -> str | None:
 # `infra/timings.db` — every stage duration this repo has recorded, in one SQLite file, and unlike
 # everything else this tool writes, it is COMMITTED.
 #
-#     ./ctl.py timings lesson-02-container
+#     ./ctl.py timings 1.2.1
 #     sqlite3 infra/timings.db 'select * from stage_stats'
 #
 # `.state/` is gitignored: it names live, billable machines, and a stale copy in someone else's
@@ -544,7 +573,7 @@ def plan(target: str) -> dict:
     The forward-looking complement of progress(). That one is the last run's history — history the
     moment it ends — and a panel rendering it in the "what happens next" slot answers yesterday's
     question. No box means the next step is `up`; a live box means `run` — except the cluster,
-    which lessons 10-13 use in place and whose one remaining human-owned step is the teardown it
+    which lessons 1.4.1–1.4.4 use in place and whose one remaining human-owned step is the teardown it
     bills EUR 0.263/hr until.
 
     A box with an UNFINISHED install is the third case, and it is the cluster's normal state for the
@@ -919,7 +948,7 @@ def account() -> dict:
         "zone": z,
         # `created` is the billing clock, and it comes from the ACCOUNT rather than from a state
         # file's mtime for the usual reason: the file is rewritten at the END of a provision (and
-        # again when lesson 5 re-points at its NAT guest), so its timestamp is minutes younger than
+        # again when lesson 1.2.4 re-points at its NAT guest), so its timestamp is minutes younger than
         # the machine and gets younger still every time anything touches it.
         "vms": [
             {"name": v.get("name"), "id": v.get("id"), "state": v.get("state"), "created": v.get("creation_date")}
@@ -1003,8 +1032,8 @@ def box_live(target: str, acc: dict | None = None) -> bool | None:
     show a red `gone` until the next account poll, which is a false alarm on the one screen whose
     entire job is making real alarms believable.
 
-    Matched on the server id, so this needs no opinion about main.tf naming lesson-02-container's
-    box `sbx-02-container`. lib.sh stores the zoned id (`fr-par-1/<uuid>`), the API lists the bare
+    Matched on the server id, so this needs no opinion about how lib.sh names 1.1.1's
+    box `sbx-1-1-1`. lib.sh stores the zoned id (`fr-par-1/<uuid>`), the API lists the bare
     uuid; comparing the last path segment is what makes those the same fact.
     """
     box = box_state(target)
@@ -1039,11 +1068,10 @@ def driver_argv(op: str, target: str, extra: list[str]) -> list[str]:
         # Chapter 4's lessons are not in lessons.json and have no box of their own: they run on the
         # workstation against the shared cluster, so their own run.sh is the driver. Dispatching on
         # "does this lesson have a box" rather than on the lesson number keeps that true if the set
-        # of box-less lessons ever changes. Leaves live under their chapter folder, and the tree is
-        # the only place that mapping exists — hence the glob.
-        leaf = next(iter(REPO.glob(f"tutorial/*/{target}/run.sh")), None)
+        # of box-less lessons ever changes. The dotted id resolves to its leaf through the tree.
+        leaf = leaf_dir(target)
         if target not in lessons() and leaf is not None:
-            return [str(leaf), *extra]
+            return [str(leaf / "run.sh"), *extra]
         return [str(INFRA / "run.sh"), target, *extra]
     die(f"unknown operation '{op}'")
 
@@ -1665,7 +1693,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "__worker":
         return worker(a.op, a.target, Path(a.events), Path(a.log), [x for x in a.rest if x != "--"])
 
-    known = list(lessons()) + [d.name for d in (REPO / "tutorial").glob("*/lesson-*") if d.is_dir()]
+    # Valid targets: the boxes/lessons in lessons.json (dotted ids + shared-box names) plus every
+    # leaf's tree-derived id — the chapter-4 lessons that have a run.sh but no lessons.json row.
+    known = list(lessons()) + leaf_ids()
     if getattr(a, "target", None) and a.cmd != "status" and a.target not in known:
         die(f"unknown target '{a.target}'. Known: {', '.join(sorted(set(known)))}")
 
@@ -1839,7 +1869,7 @@ def main(argv: list[str] | None = None) -> int:
             # The cluster is not a lesson and has no `main.py`. Chapter 4's lessons run against it
             # from the workstation, so `run` belongs to them — dispatching here would hand run.sh a
             # target it can only fail on, in a detached log, five lines in.
-            print(f"{CLUSTER} is a cluster, not a lesson — run lesson-10..13 against it instead", file=sys.stderr)
+            print(f"{CLUSTER} is a cluster, not a lesson — run 1.4.1..1.4.6 against it instead", file=sys.stderr)
             return EXIT_USAGE
         cr = current_run(a.target)
         # An `up` triggered through a shared lesson is recorded against the BOX — up.sh resolves the

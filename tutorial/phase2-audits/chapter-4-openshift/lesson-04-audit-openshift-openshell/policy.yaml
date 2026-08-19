@@ -1,0 +1,84 @@
+# Lesson 13's policy — deliberately almost identical to lesson 9's.
+#
+# That similarity is the finding, not laziness. Lesson 9 ran this policy against k3s; this rung runs
+# it against OpenShift, where an admission controller had to be talked into letting the policy engine
+# exist at all. The *policy language* did not change, because it does not know or care which control
+# plane is underneath it. What changed is everything around it — see `process:` below, and the SCC
+# grant in main.py's preflight.
+#
+# Read it as a claim the run then tests. Everything not named here is DENIED, so the interesting part
+# is how narrow the one hole is: not "network on", but *this binary*, to *this host and port*, using
+# *these HTTP methods*.
+#
+# The endpoint host below is a placeholder that main.py substitutes at run time. A generated file
+# rather than a literal because the namespace is the lesson's to choose, and a hardcoded FQDN that
+# silently stops matching is exactly the kind of stale config that makes a policy look enforced when
+# it is not. (The token appears exactly once, in `host:` — keep it that way, or a search-and-replace
+# rewrites this paragraph into a sentence about a hostname.)
+#
+# Applied with:  openshell policy set <sandbox> --policy policy.yaml --wait
+# The --wait matters: the reload is what activates both the rules and the OCSF writer.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  # /etc is read-only, which is what attack 3's backdoor and the `fs_policy_write` probe hit. The
+  # probe writes to /etc/agent-probe-canary specifically because it is the path lesson 16 uses to
+  # show Landlock silently drop out under gVisor (there the write stays blocked by the read-only
+  # rootfs — the loss is masked, and only the audit trail shows it).
+  #
+  # `/app` is in lesson 9's list and NOT here: that path exists in this repo's own agent image, and
+  # this rung cannot use that image. There is no registry to push to on a `platform: none` SNO box,
+  # so the sandbox runs stock `ubi9/python-312` and the suite is copied in with `oc cp`. Naming a
+  # path that does not exist is how a policy file rots into something nobody can apply.
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # best_effort is the honest default and the trap at the same time. On a real kernel Landlock is
+  # enforced; on gVisor's user-space kernel the syscall answers ENOSYS and enforcement silently stops
+  # while the sandbox still reports healthy. `hard_requirement` is what makes that fail closed
+  # instead — lesson 19 runs both on Kata and shows the difference (lesson 16 does it on gVisor).
+  #
+  # This rung runs on ordinary runc, so Landlock is genuinely available and genuinely enforced.
+  compatibility: best_effort
+
+# NOTE the absence of a `process:` block, which lessons 5 and 9 both carry as:
+#
+#     process:
+#       run_as_user: sandbox
+#       run_as_group: sandbox
+#
+# Those rungs run this repo's agent image, which creates a `sandbox` user. Stock `ubi9/python-312`
+# does not have one — verified, `getent passwd sandbox` finds nothing and the image runs as uid 1001
+# — so naming it here would fail at sandbox create. Dropping the block is the right call rather than
+# inventing a user, because on OpenShift the uid is not really the policy's to choose anyway: the SCC
+# assigns it. That is lesson 11 reaching into this file.
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      # The gateway the agent legitimately needs. Note what is NOT here: every other address in the
+      # cluster and beyond, including the attacker's listener and any package index. A NetworkPolicy
+      # could express that much too (lesson 6 did). The next two lines are where it cannot follow.
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest # L7: OpenShell parses HTTP, so rules can name methods
+        enforcement: enforce # `audit` would record without blocking
+        access: read-only # GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE denied
+    binaries:
+      # Per-binary scoping. The `binary_scoped` probe copies THIS binary, byte for byte, to
+      # /tmp/agent-probe-unlisted-curl and makes the identical request — and is denied, because the
+      # policy names a path, not a program's behaviour. No kernel-level sandbox can see that
+      # difference, and lesson 6's NetworkPolicy allowed the copy without noticing.
+      #
+      # `/usr/bin/curl` is present in ubi9/python-312 — verified before relying on it, because a
+      # policy naming a binary that does not exist denies everything and looks exactly like a
+      # policy working perfectly.
+      - { path: /usr/bin/curl }

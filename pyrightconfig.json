@@ -4,99 +4,189 @@
   "exclude": ["**/.venv", "**/node_modules", "**/__pycache__"],
   "executionEnvironments": [
     {
-      "root": "tutorial/chapter-1-no-sandbox/lesson-01-no-sandbox",
+      "root": "tutorial/phase1-attacks/chapter-1-no-sandbox/lesson-01-no-sandbox",
       "extraPaths": [
-        "tutorial/chapter-1-no-sandbox/lesson-01-no-sandbox/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-1-no-sandbox/lesson-01-no-sandbox/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-2-one-host/lesson-02-container",
+      "root": "tutorial/phase1-attacks/chapter-2-one-host/lesson-01-container",
       "extraPaths": [
-        "tutorial/chapter-2-one-host/lesson-02-container/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-2-one-host/lesson-01-container/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-2-one-host/lesson-03-container-gvisor",
+      "root": "tutorial/phase1-attacks/chapter-2-one-host/lesson-02-container-gvisor",
       "extraPaths": [
-        "tutorial/chapter-2-one-host/lesson-03-container-gvisor/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-2-one-host/lesson-02-container-gvisor/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-2-one-host/lesson-04-container-kata",
+      "root": "tutorial/phase1-attacks/chapter-2-one-host/lesson-03-container-kata",
       "extraPaths": [
-        "tutorial/chapter-2-one-host/lesson-04-container-kata/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-2-one-host/lesson-03-container-kata/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-2-one-host/lesson-05-container-openshell",
+      "root": "tutorial/phase1-attacks/chapter-2-one-host/lesson-04-container-openshell",
       "extraPaths": [
-        "tutorial/chapter-2-one-host/lesson-05-container-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-2-one-host/lesson-04-container-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-3-kubernetes/lesson-06-k8s",
+      "root": "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-01-k8s",
       "extraPaths": [
-        "tutorial/chapter-3-kubernetes/lesson-06-k8s/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-01-k8s/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-3-kubernetes/lesson-07-k8s-gvisor",
+      "root": "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-02-k8s-gvisor",
       "extraPaths": [
-        "tutorial/chapter-3-kubernetes/lesson-07-k8s-gvisor/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-02-k8s-gvisor/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-3-kubernetes/lesson-08-k8s-kata",
+      "root": "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-03-k8s-kata",
       "extraPaths": [
-        "tutorial/chapter-3-kubernetes/lesson-08-k8s-kata/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-03-k8s-kata/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell",
+      "root": "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-04-k8s-openshell",
       "extraPaths": [
-        "tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-04-k8s-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-3-kubernetes/lesson-16-compose-gvisor-openshell",
+      "root": "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-05-compose-gvisor-openshell",
       "extraPaths": [
-        "tutorial/chapter-3-kubernetes/lesson-16-compose-gvisor-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-05-compose-gvisor-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-3-kubernetes/lesson-17-compose-kata-openshell",
+      "root": "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-06-compose-kata-openshell",
       "extraPaths": [
-        "tutorial/chapter-3-kubernetes/lesson-17-compose-kata-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-3-kubernetes/lesson-06-compose-kata-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-4-openshift/lesson-10-openshift-pod",
+      "root": "tutorial/phase1-attacks/chapter-4-openshift/lesson-01-openshift-pod",
       "extraPaths": [
-        "tutorial/chapter-4-openshift/lesson-10-openshift-pod/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-4-openshift/lesson-01-openshift-pod/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-4-openshift/lesson-11-openshift-scc",
+      "root": "tutorial/phase1-attacks/chapter-4-openshift/lesson-02-openshift-scc",
       "extraPaths": [
-        "tutorial/chapter-4-openshift/lesson-11-openshift-scc/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-4-openshift/lesson-02-openshift-scc/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-4-openshift/lesson-12-openshift-kata",
+      "root": "tutorial/phase1-attacks/chapter-4-openshift/lesson-03-openshift-kata",
       "extraPaths": [
-        "tutorial/chapter-4-openshift/lesson-12-openshift-kata/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-4-openshift/lesson-03-openshift-kata/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-4-openshift/lesson-13-openshift-openshell",
+      "root": "tutorial/phase1-attacks/chapter-4-openshift/lesson-04-openshift-openshell",
       "extraPaths": [
-        "tutorial/chapter-4-openshift/lesson-13-openshift-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-4-openshift/lesson-04-openshift-openshell/.venv/lib/python3.12/site-packages"
       ]
     },
     {
-      "root": "tutorial/chapter-4-openshift/lesson-19-compose-kata-openshell",
+      "root": "tutorial/phase1-attacks/chapter-4-openshift/lesson-06-compose-kata-openshell",
       "extraPaths": [
-        "tutorial/chapter-4-openshift/lesson-19-compose-kata-openshell/.venv/lib/python3.12/site-packages"
+        "tutorial/phase1-attacks/chapter-4-openshift/lesson-06-compose-kata-openshell/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-1-no-sandbox/lesson-01-audit-no-sandbox",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-1-no-sandbox/lesson-01-audit-no-sandbox/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-2-one-host/lesson-01-audit-container",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-2-one-host/lesson-01-audit-container/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-2-one-host/lesson-02-audit-container-gvisor",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-2-one-host/lesson-02-audit-container-gvisor/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-2-one-host/lesson-03-audit-container-kata",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-2-one-host/lesson-03-audit-container-kata/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-2-one-host/lesson-04-audit-container-openshell",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-2-one-host/lesson-04-audit-container-openshell/.venv/lib/python3.12/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-3-kubernetes/lesson-01-audit-k8s",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-3-kubernetes/lesson-01-audit-k8s/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-3-kubernetes/lesson-02-audit-k8s-gvisor",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-3-kubernetes/lesson-02-audit-k8s-gvisor/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-3-kubernetes/lesson-03-audit-k8s-kata",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-3-kubernetes/lesson-03-audit-k8s-kata/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-3-kubernetes/lesson-04-audit-k8s-openshell",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-3-kubernetes/lesson-04-audit-k8s-openshell/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-3-kubernetes/lesson-05-audit-compose-gvisor-openshell",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-3-kubernetes/lesson-05-audit-compose-gvisor-openshell/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-3-kubernetes/lesson-06-audit-compose-kata-openshell",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-3-kubernetes/lesson-06-audit-compose-kata-openshell/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-4-openshift/lesson-01-audit-openshift-pod",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-4-openshift/lesson-01-audit-openshift-pod/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-4-openshift/lesson-02-audit-openshift-scc",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-4-openshift/lesson-02-audit-openshift-scc/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-4-openshift/lesson-03-audit-openshift-kata",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-4-openshift/lesson-03-audit-openshift-kata/.venv/lib/python3.13/site-packages"
+      ]
+    },
+    {
+      "root": "tutorial/phase2-audits/chapter-4-openshift/lesson-04-audit-openshift-openshell",
+      "extraPaths": [
+        "tutorial/phase2-audits/chapter-4-openshift/lesson-04-audit-openshift-openshell/.venv/lib/python3.13/site-packages"
       ]
     }
   ]

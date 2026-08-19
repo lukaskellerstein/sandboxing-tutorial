@@ -2,7 +2,7 @@
 # Bring up ONE lesson's box: provision it with the scw CLI, copy the repo onto it, install the
 # substrates that lesson needs, and assert each boundary FROM INSIDE.
 #
-#   ./up.sh lesson-03-container-gvisor
+#   ./up.sh 1.2.2
 #   ./up.sh --list
 #
 # The assertion at the end is not ceremony. This repo's characteristic failure is a lesson that
@@ -35,7 +35,7 @@ lesson_kind "${LESSON}" >/dev/null # validates the name against lessons.json
 # lesson: chapter 3's four lessons all resolve to `chapter-03-k8s`, one cluster carrying every
 # boundary in the chapter. Resolve once, here, so that every box_* call, every state file and every
 # message below names the thing that actually exists in the Scaleway account — and so that
-# `./up.sh lesson-07-k8s-gvisor` is simply an alias for bringing that cluster up, idempotently.
+# `./up.sh 1.3.2` is simply an alias for bringing that cluster up, idempotently.
 BOX=$(lesson_box "${LESSON}")
 [ "${BOX}" = "${LESSON}" ] || say "${LESSON} shares its cluster with the rest of its chapter — provisioning ${BOX}"
 
@@ -135,7 +135,7 @@ for sub in $(lesson_substrates "${BOX}"); do
   # The NAT-guest substrate MOVES the lesson: everything after it runs inside the guest, reached
   # through the box we just provisioned. Re-point the state and re-sync the repo one hop further in.
   # Basename, because substrates are named by chapter now (`chapter-2/50-nat-vm`). Comparing the
-  # full path here would silently never match, and the symptom would be lesson 5 running on the BOX
+  # full path here would silently never match, and the symptom would be lesson 1.2.4 running on the BOX
   # instead of inside its NAT'd guest — which is exactly the lesson's whole point, failing quietly.
   if [ "${sub##*/}" = "50-nat-vm" ]; then
     GUEST_IP=$(box_ssh "${BOX}" 'sudo sed -n "s/^GUEST_IP=//p" /etc/sandboxing-tutorial-guest.env')
@@ -175,7 +175,7 @@ cat <<EOF
 
 EOF
 
-# `run` takes a LESSON, never a box — there is no tutorial/chapter-03-k8s to cd into. On a shared
+# `run` takes a LESSON, never a box — there is no tutorial/phase1-attacks/chapter-03-k8s to cd into. On a shared
 # cluster the two names have come apart, so print the ones that actually work rather than a
 # copy-pasteable command that dies with "no such directory".
 if [ "${BOX}" = "${LESSON}" ]; then

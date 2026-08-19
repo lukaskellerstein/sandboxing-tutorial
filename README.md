@@ -22,10 +22,9 @@ cost, and when to compose two of them** is the one-page conclusion in
 [`docs/decision-table.md`](docs/decision-table.md).
 
 > [!note]
-> **Status: syllabus agreed, lessons not written.** The repo layout, tooling and
-> Claude Code configuration are in place. [`syllabus.md`](syllabus.md) is the
-> source of truth for what lessons exist and in what order — read it first. No
-> lesson directory exists yet.
+> **Status: phase 1 built.** Lessons 1.1.1–1.4.6 exist under
+> `tutorial/phase1-attacks/`. [`syllabus.md`](syllabus.md) is the source of
+> truth for what lessons exist and in what order — read it first.
 
 ## Where this runs
 
@@ -46,8 +45,8 @@ Chapters 1–3 run on Scaleway **VMs** (€0.028–0.055/hr, up in under a minut
 composition leaves included. Only chapter 4 needs **bare metal**, because OpenShift
 sandboxed containers do.
 Which lesson gets which box is declared once, in
-[`infra/terraform/lessons.json`](infra/terraform/lessons.json), and applied by
-Terraform.
+[`infra/lessons.json`](infra/lessons.json), and read by the `scw`-based
+scripts in `infra/`.
 
 The last lesson is the exception and runs on your own machine: what changes on
 macOS, and what it quietly lies to you about.
@@ -57,9 +56,6 @@ macOS, and what it quietly lies to you about.
 - **Python 3.12+** and [`uv`](https://docs.astral.sh/uv/)
 - A **[Scaleway](https://www.scaleway.com/)** account and the `scw` CLI —
   `infra/` provisions and destroys the hosts. Chapters 1–3 ≈ **€1**.
-- **[Terraform](https://developer.hashicorp.com/terraform)** ≥ 1.9, which is what
-  `infra/up.sh` and `infra/down.sh` drive. It reads the same `~/.config/scw/`
-  credentials the CLI does, so there is nothing extra to configure.
 - A **Red Hat** account for the OpenShift chapter (free; pull secret only)
 - [Podman](https://podman.io/) locally for the final lesson
 
@@ -68,14 +64,15 @@ macOS, and what it quietly lies to you about.
 ```text
 syllabus.md            # source of truth for lessons and ordering
 ATTACKS.md             # what every probe does and why it matters, in plain language
-infra/                 # terraform + substrates; provisions and destroys the boxes
+infra/                 # scw provisioning + substrates; provisions and destroys the boxes
 results/               # lesson scorecards + overall.html; generated, gitignored
-tutorial/              # one folder per chapter; each lesson a standalone uv project
-    chapter-N-.../
-        lesson-NN-.../
-            run.sh         # THE command: provision -> run -> destroy
-            report.html    # this lesson's scorecard, generated after each run
-            report.json    # the same, machine-readable
+tutorial/              # one folder per phase, then per chapter; each lesson a standalone uv project
+    phase1-attacks/
+        chapter-N-.../
+            lesson-NN-.../
+                run.sh         # THE command: provision -> run -> destroy
+                report.html    # this lesson's scorecard, generated after each run
+                report.json    # the same, machine-readable
 ```
 
 ## Running a lesson
@@ -84,7 +81,7 @@ One command, from the lesson's own folder. It provisions that lesson's box, runs
 lesson on it, and destroys the box — **even if the lesson fails**:
 
 ```bash
-cd tutorial/chapter-2-one-host/lesson-03-container-gvisor
+cd tutorial/phase1-attacks/chapter-2-one-host/lesson-02-container-gvisor
 ./run.sh              # provision -> run -> destroy
 ./run.sh --keep       # ...leave the box up afterwards, for poking around
 ```
@@ -98,18 +95,23 @@ python3 infra/report/overall.py --open      # -> results/overall.html
 ```
 
 An attack is **BLOCKED** (the boundary stopped it) or it **SUCCEEDED** (it got what it
-wanted). A **low** number is correct for lesson 1: it is the no-sandbox baseline, and
+wanted). A **low** number is correct for lesson 1.1.1: it is the no-sandbox baseline, and
 the attacks succeeding there are what everything else is measured against.
 [`ATTACKS.md`](ATTACKS.md) explains every probe.
+
+A phase-2 (audit) lesson's page asks the other question first — **how many of those attacks
+were recorded** — with a segmented coverage bar (logged / crossed a sensor, unrecorded / no
+sensor), the attacks that succeeded and left no record called out, and a containment × record
+grid; the containment score sits beside it, since it is the same suite as the phase-1 twin.
 
 Each lesson is self-contained — `cd` into it, `uv sync && uv run python -u main.py`,
 see results. No shared state between lessons.
 
 ```bash
 cd infra
-./up.sh   lesson-01-no-sandbox   # terraform apply + substrates + assert the boundary
-./run.sh  lesson-01-no-sandbox   # run it there, fetch the scorecard
-./down.sh --all                  # destroy everything; this is what keeps it cheap
+./up.sh   1.1.1      # provision + substrates + assert the boundary
+./run.sh  1.1.1      # run it there, fetch the scorecard
+./down.sh --all      # destroy everything; this is what keeps it cheap
 ```
 
 ## Related

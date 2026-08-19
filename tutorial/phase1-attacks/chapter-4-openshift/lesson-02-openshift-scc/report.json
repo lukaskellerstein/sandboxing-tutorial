@@ -1,0 +1,68 @@
+{
+  "lesson": "1.4.2",
+  "mode": "admission",
+  "boundary": "SCC admission \u2014 the cluster refuses an over-privileged pod before it starts",
+  "generated_at": "2026-08-18T17:44:07+02:00",
+  "complete": true,
+  "duration_s": null,
+  "blocked": 3,
+  "scored": 3,
+  "logged": 0,
+  "recorded_counts": {
+    "LOGGED": 0,
+    "NOT_LOGGED": 0,
+    "NO_SENSOR": 3
+  },
+  "unseen_breaches": 0,
+  "unrecorded_breaches": 0,
+  "host": {
+    "engine": "openshift-sno",
+    "node_kernel": "5.14.0-427.138.1.el9_4.x86_64"
+  },
+  "measurements": {
+    "engine": "openshift-sno",
+    "node_kernel": "5.14.0-427.138.1.el9_4.x86_64"
+  },
+  "findings": [
+    {
+      "name": "scc_privileged_refused",
+      "attack": "P",
+      "why": "Is an over-privileged pod refused at admission, before it ever starts?",
+      "group": "policy",
+      "value": "Forbidden",
+      "detail": "an over-privileged pod never started",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "scc_refused_by_admission",
+      "attack": "P",
+      "why": "Was it SCC admission that refused it \u2014 not RBAC?",
+      "group": "policy",
+      "value": "security-context-constraint",
+      "detail": "SCC, not RBAC \u2014 the SA was granted `edit` first (Trap #13)",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "scc_compliant_admitted",
+      "attack": "P",
+      "why": "Is the same workload admitted once it complies? Must permit, not only deny.",
+      "group": "policy",
+      "value": "restricted-v2",
+      "detail": "the same workload, with no runAsUser, is allowed",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "scc_count",
+      "attack": "?",
+      "why": "",
+      "group": "policy",
+      "value": 14,
+      "detail": "SCCs evaluated against every pod",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    }
+  ]
+}

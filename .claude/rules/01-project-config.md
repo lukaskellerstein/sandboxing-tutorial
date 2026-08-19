@@ -10,23 +10,24 @@ description: Project configuration — architecture, paths, dev environment
 
 > [!important]
 > **Chapters 1–4 are built as of 2026-08-10; composition leaves added (spec 04, 2026-08-14).**
-> `syllabus.md` and lessons 01–13 exist, as does `infra/`. Lessons **01–09 are green
-> end-to-end on Scaleway VMs** (01–05 verified 2026-08-06, 06–09 on 2026-08-07) and
-> **10–13 are green on single-node OpenShift 4.18.49** on `EM-B112X-SSD` bare metal,
-> verified 2026-08-10.
+> `syllabus.md` and the boundary lessons (1.1.1, 1.2.1–1.2.4, 1.3.1–1.3.4, 1.4.1–1.4.4)
+> exist, as does `infra/`. Lessons **1.1.1, 1.2.1–1.2.4 and 1.3.1–1.3.4 are green
+> end-to-end on Scaleway VMs** (1.1.1 and 1.2.1–1.2.4 verified 2026-08-06, 1.3.1–1.3.4 on
+> 2026-08-07) and **1.4.1–1.4.4 are green on single-node OpenShift 4.18.49** on
+> `EM-B112X-SSD` bare metal, verified 2026-08-10.
 > **Chapter 5 is dissolved** (spec 04): composition is demonstrated in-chapter.
-> **Lessons 16 and 17 are runnable and green on `chapter-03-k8s`** (verified 2026-08-14);
-> **lesson 19 is written but UNVERIFIED** — it needs the human-owned SNO cluster;
-> **lessons 14, 15, 18 are documentation-only README stubs** (no `main.py`, no box, not
+> **Lessons 1.3.5 and 1.3.6 are runnable and green on `chapter-03-k8s`** (verified 2026-08-14);
+> **lesson 1.4.6 is written but UNVERIFIED** — it needs the human-owned SNO cluster;
+> **lessons 1.2.5, 1.2.6, 1.4.5 are documentation-only README stubs** (no `main.py`, no box, not
 > in `lessons.json`). Update this file the moment any of that stops being true.
 >
 > Chapter 4 breaks the per-lesson-box model on purpose: all four lessons share ONE
-> cluster, so `tutorial/chapter-4-openshift/lesson-1N-*/run.sh` neither provisions nor destroys, and the
+> cluster, so `tutorial/phase1-attacks/chapter-4-openshift/lesson-*/run.sh` neither provisions nor destroys, and the
 > teardown (`infra/down.sh openshift-sno`) is a step a human owns. Nothing will do it
 > for you, and the box is €0.263/hr.
 >
-> **The box topology is one shared box per chapter as of 2026-08-13**: lessons 2–4 share
-> `chapter-02-host` (PRO2-XS), lessons 6–9 share `chapter-03-k8s` (PRO2-S), lesson 5 keeps
+> **The box topology is one shared box per chapter as of 2026-08-13**: lessons 1.2.1–1.2.3 share
+> `chapter-02-host` (PRO2-XS), lessons 1.3.1–1.3.4 share `chapter-03-k8s` (PRO2-S), lesson 1.2.4 keeps
 > its own box by hard constraint (OpenShell's NAT-guest re-point), and chapters 1 and 4
 > were already one box each. Shared-lesson `run.sh` still provisions and destroys — the
 > chapter box, via an EXIT trap — and `infra/chapter-02.sh` / `chapter-03.sh` amortize the
@@ -36,17 +37,27 @@ description: Project configuration — architecture, paths, dev environment
   workloads: running an AI agent and the code it generates behind a real
   isolation boundary, on local containers and on Kubernetes
 - **Architecture**: independently-runnable lesson leaves. No application; the
-  lessons *are* the deliverable. **Thirteen leaves exist (lessons 01–13).**
+  lessons *are* the deliverable. **Nineteen phase-1 leaves exist (1.1.1, 1.2.1–1.2.6,
+  1.3.1–1.3.6, 1.4.1–1.4.6; of those, 1.2.5, 1.2.6 and 1.4.5 are documentation-only
+  stubs)**, plus **fifteen runnable phase-2 audit leaves (2.1.1, 2.2.1–2.2.4, 2.3.1–2.3.6,
+  2.4.1–2.4.4)** and **four documentation-only ones (2.2.5, 2.2.6, 2.4.5, 2.4.6)** under
+  `tutorial/phase2-audits/` — the audit twins that ask whether each boundary would have *recorded* the
+  attack. **All four audit chapters are built.** 2.4.6 is BLOCKED rather than impossible: its phase-1
+  twin 1.4.6 does not work on OpenShift because the OSC Kata **guest image** omits `veth.ko`, which
+  OpenShell's L7 proxy needs (the guest *kernel* is the node's RHEL kernel — not a config difference).
+  Red Hat has it scheduled as KATA-5840 for OSC 1.14. **2.4.6's own README is the handoff record** —
+  read it before retrying; see also spec 05's `current_status.md`.
 - **Structure**: `tutorial/` (the lesson leaves), `syllabus.md` (the source of
   truth for the lesson list and ordering — it comes before any lesson directory),
   `infra/` (`scw`-based provisioning + substrate scripts for the per-lesson disposable box)
 - **Build**: nothing is built. `uv sync` in a leaf resolves that leaf's
   dependencies against its own `.venv`.
-- **Run a lesson**: `cd tutorial/<chapter>/<lesson> && ./run.sh` — for lessons 01–09 that
+- **Run a lesson**: `cd tutorial/<phase>/<chapter>/<lesson> && ./run.sh` — for lessons
+  1.1.1, 1.2.1–1.2.4 and 1.3.1–1.3.4 that
   provisions its Scaleway VM (the shared chapter box, where the lesson carries `box`),
   runs the lesson there, destroys the box (including on failure), and writes
   `report.html` + `report.json` beside the lesson.
-  **Lessons 10–13 are the exception**: they run against the one shared OpenShift
+  **Lessons 1.4.1–1.4.4 are the exception**: they run against the one shared OpenShift
   cluster and neither provision nor destroy it.
 - **Test**: no repo-wide suite. That same command *is* the test: provision → run →
   validate → investigate on failure → destroy, per lesson — see `06-testing.md`.
@@ -99,7 +110,8 @@ its own environment — no workspaces, by design.
 
 | Leaf | Count | Notes |
 |:--|:--|:--|
-| `tutorial/` | **13** | lessons 01–13; chapters 1–4 of the syllabus |
+| `tutorial/phase1-attacks/` | **19** | lessons 1.1.1, 1.2.1–1.2.6, 1.3.1–1.3.6, 1.4.1–1.4.6; chapters 1–4 of the syllabus |
+| `tutorial/phase2-audits/` | **15 runnable + 4 doc-only** | the audit twins 2.1.1, 2.2.1–2.2.4, 2.3.1–2.3.6, 2.4.1–2.4.4; 2.2.5/2.2.6/2.4.5 are documentation-only; 2.4.6 is blocked (1.4.6 fails on OpenShift) and its README is the handoff record |
 
 Every leaf carries its own `pyproject.toml` (with `[tool.ruff]` extending the
 root `ruff.toml`), `uv.lock`, `.gitignore` and `.venv`.
@@ -114,17 +126,18 @@ python3 ~/Projects/Github/lukaskellerstein/mac-setup/projects/scripts/gen-pyrigh
 Re-run it whenever a leaf is added, and diff before committing. Without it
 basedpyright reports spurious unresolved imports across the whole tree.
 
-A lesson leaf's shape — leaves live under their chapter folder
-(`tutorial/chapter-N-<name>/`), and the tree is the only place that
-lesson→chapter mapping exists (`infra/run.sh` resolves it with a glob;
-`lessons.json` stays keyed by bare lesson name):
+A lesson leaf's shape — leaves live under their phase and chapter folders
+(`tutorial/phaseN-<name>/chapter-N-<name>/`), and the tree is the only place that
+id→leaf mapping exists (`infra/run.sh` resolves it with a glob;
+`lessons.json` stays keyed by dotted id):
 
 ```text
-chapter-N-<name>/
-└── lesson-NN-<name>/
-    ├── main.py           the runnable entrypoint (< ~200 lines)
-    ├── README.md         the lesson text
-    ├── pyproject.toml    deps + [tool.ruff] extending the root config
-    ├── uv.lock
-    └── .gitignore
+phaseN-<name>/
+└── chapter-N-<name>/
+    └── lesson-NN-<name>/
+        ├── main.py           the runnable entrypoint (< ~200 lines)
+        ├── README.md         the lesson text
+        ├── pyproject.toml    deps + [tool.ruff] extending the root config
+        ├── uv.lock
+        └── .gitignore
 ```

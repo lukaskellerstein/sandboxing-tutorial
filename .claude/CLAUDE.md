@@ -35,7 +35,7 @@ do is diagnose; `shellcheck` findings come from `nvim-tools`, per
 
 **NEVER report completion without first running the affected lesson end-to-end on
 its own disposable box.** The cycle is **provision → run → validate → investigate
-on failure → destroy**, per lesson, and it is one command: `cd tutorial/<chapter>/<lesson>
+on failure → destroy**, per lesson, and it is one command: `cd tutorial/<phase>/<chapter>/<lesson>
 && ./run.sh`. Verification is YOUR responsibility — the user should never need to
 ask you to test, and never has to tell you to tear a box down.
 
@@ -61,44 +61,98 @@ not fixed**. Report it as such rather than shipping the green run.
 
 ## sandboxing-tutorial at a glance
 
+- **PHASE 2 EXISTS AND IS PARTLY BUILT (spec 05, 2026-08-15).** The tree gained a phase level:
+  `tutorial/phase1-attacks/` (the attack lessons, ids `1.C.L`) and `tutorial/phase2-audits/`
+  (the audit twins, ids `2.C.L`). Phase 2 asks the second question — *would you ever know the
+  attempt was made?* — by running the SAME attack suite behind the same boundary with a sensor
+  watching, and reporting a per-attack RECORDED verdict. **Built and verified: 2.1.1, 2.2.1–2.2.4 and
+  ALL SIX of 2.3.1–2.3.6, plus 2.4.1–2.4.4** — every audit chapter is now built, and **2.2.5 / 2.2.6 /
+  2.4.5 are documentation-only leaves**. **2.4.6 is BLOCKED, not impossible**: its phase-1 twin 1.4.6
+  does not work on OpenShift — OpenShell's supervisor needs a **veth pair** for its L7 proxy, and the
+  OSC Kata **guest image** ships a module set that omits `veth.ko` (`ip link add … type veth` →
+  `Unknown device type`), while the identical overlay works on k3s. The guest *kernel* is fine — it is
+  the node's RHEL kernel version; do not go looking for a kernel-config difference. Red Hat has the fix
+  scheduled: **KATA-5840, fixVersion OSC 1.14 (planned 2026-10-01)**. The full record — versions,
+  why no workaround exists, and a five-minute probe to run before any lesson work — is
+  **2.4.6's README**, which is a handoff document, not a lesson. Every built leaf is a true audit
+  twin: **zero rows differ** from its phase-1 containment card. The host eBPF sensor
+  is **Tetragon, pinned v1.7.0** (migrated from Falco 2026-08-15) — one sensor across every rung so a
+  reader can attribute a rung-to-rung difference to the BOUNDARY rather than to the instrument.
+  **The handoff doc is [`docs/my-specs/05-phase-split-and-audit-coverage/current_status.md`](../docs/my-specs/05-phase-split-and-audit-coverage/current_status.md)** — read it before touching phase 2;
+  it carries the sensor mechanics that are easy to get wrong and expensive to rediscover.
+  - **Do NOT set Tetragon's `--enable-k8s-api`** (measured 2026-08-15, five rounds on a live k3s box):
+    it enables a TracingPolicy CRD watcher the release tarball ships no CRDs for so tetragon *exits*,
+    it never resolves `process.pod` even with `--enable-cri` against k3s's containerd socket, and it
+    holds every event up to **30 s** in the EventCache — which turns a prompt capture window into a
+    trail of false NOT_LOGGED. The chapter-3 leaves attribute events to one named POD by **container
+    id** (`process.docker` matched against the pod's `containerID` from the k8s API) instead. The rule
+    inverts by chapter: rootless podman leaves `process.docker` EMPTY on the workload (2.2.1 uses the
+    pid namespace); the kubelet populates it, and the pid namespace cannot separate the attack pod
+    from the gateway pod beside it.
+  - **Chapter-3 audit substrate order is load-bearing**: `60-k8s → k8s-api-audit → 70-k8s-gvisor →
+    72-k8s-gvisor-trace → 75-k8s-devmapper → 80-k8s-kata → 85-kata-debug-kernel → 90-k8s-openshell →
+    tetragon`. Everything that restarts k3s must land before 80 (a restart terminates the kata-deploy
+    DaemonSet, which reverts its own install on the way out); `85-kata-debug-kernel` must land AFTER
+    80 (kata-deploy lays down /opt/kata when it starts) and restarts nothing, as does `tetragon`.
+  - **Chapter 4's audit thesis: the platform audits the CONTROL PLANE, not the kernel.** The
+    kube-apiserver audit log is on by default; the node's `auditd` runs with two `exclude` rules and no
+    syscall rules, and arming it means `auditctl` at run time (ephemeral) or a MachineConfig (mutates
+    the immutable OS). **Attribution is by SELinux MCS** — a third key after chapter 2's pid namespace
+    and chapter 3's container id; uid is the trap (`USER 1001` is shared with `service-ca-operator`).
+    Correlate by audit event SERIAL: the MCS is on the SYSCALL record's `subj=`, while the PATH
+    companion's `obj=` is the FILE's context and misses every `/proc` read. Two RHCOS traps make it
+    intermittent until handled — the 8192 backlog (raise it, assert `lost=0`) and `max_log_file = 8`
+    MB with ROTATE (read the rotated segments; `auditd.conf` is in the immutable image). For an
+    OpenShell sandbox scope the rule by `subj_type=container_t`, NOT uid — OpenShell sets no
+    `runAsUser`. **2.4.2 is the sharpest finding in phase 2**: SCC admission is the only boundary on
+    the ladder that records what it refused, because its decision IS an API request.
+  - **2.3.3 CORRECTED discovery gate G1.** A privileged sidecar in a Kata pod does NOT get the guest's
+    init context: `privileged` + `runAsUser: 0` + full `CapEff` + `hostPID: true` all still get EPERM
+    from the guest's audit netlink, because `hostPID` under Kata is the SANDBOX's namespace, not the
+    VM's init. The in-guest sensor is a **ptrace** tracer, enabled by `shareProcessNamespace: true`
+    (which nerdctl has no equivalent for). eBPF *does* load in the guest — the fence is audit-specific.
+    Under kata-deploy the qemu config is a **symlink** and `sed -i` replaces it rather than editing the
+    target; the pod then hangs in ContainerCreating, which reads like a broken Kata install.
+
 - **Status: chapters 1–4 built (2026-08-10); composition leaves added (spec 04, 2026-08-14).**
-  Lessons 01–13 are written and green: 01–09 on Scaleway VMs, 10–13 on single-node
+  The boundary lessons (1.1.1, 1.2.1–1.2.4, 1.3.1–1.3.4, 1.4.1–1.4.4) are written and
+  green: 1.1.1, 1.2.1–1.2.4 and 1.3.1–1.3.4 on Scaleway VMs, 1.4.1–1.4.4 on single-node
   OpenShift 4.18.49 on bare metal. **Chapter 5 is dissolved** — composition is now
-  demonstrated in-chapter: **lessons 16, 17 are runnable and green on `chapter-03-k8s`**
-  (verified 2026-08-14), **lesson 19 is written but UNVERIFIED** (needs the human-owned
-  SNO cluster), and **lessons 14, 15, 18 are documentation-only README stubs** (no
+  demonstrated in-chapter: **lessons 1.3.5, 1.3.6 are runnable and green on `chapter-03-k8s`**
+  (verified 2026-08-14), **lesson 1.4.6 is written but UNVERIFIED** (needs the human-owned
+  SNO cluster), and **lessons 1.2.5, 1.2.6, 1.4.5 are documentation-only README stubs** (no
   `main.py`, no box, not in `lessons.json`). The syllabus is still the source of truth
   for what lessons exist and in what order, and it is written *before* any lesson
   directory — do not create a leaf the syllabus does not list.
 - **The composition finding (measured 2026-08-14, and it diverges from the prior art).**
-  OpenShell-over-gVisor (lesson 16) was the never-run combo. On OpenShell 0.0.99 the
+  OpenShell-over-gVisor (lesson 1.3.5) was the never-run combo. On OpenShell 0.0.99 the
   prior art's predicted `fs_policy_write → ALLOWED` does **not** reproduce: gVisor drops
   Landlock (HIGH `landlock-unavailable` audit finding), but the k8s driver's read-only
   ROOT FILESYSTEM still blocks the write, so the scored result equals the safe Kata
   stack — the audit trail is the only witness, and `hard_requirement` fails closed.
-  OpenShell-over-Kata (lessons 17, 19) keeps Landlock. The tutorial's headline was
+  OpenShell-over-Kata (lessons 1.3.6, 1.4.6) keeps Landlock. The tutorial's headline was
   reframed from "the write flips to ALLOWED" to "Landlock silently disappears; verify
   via the audit trail or fail closed".
 - **One shared box per chapter (2026-08-13), declared with `box` in `lessons.json`.**
   `lib.sh`'s `lesson_box()` is the only place that resolves it; every driver calls it
   before touching state, ssh or rsync. **`./down.sh <a shared lesson>` refuses** — the
   lesson owns no box, and printing `destroyed, billing stopped` over a live cluster is a
-  false all-clear. The one exception is **lesson 5, on its own box by hard constraint**:
+  false all-clear. The one exception is **lesson 1.2.4, on its own box by hard constraint**:
   OpenShell's rootless-podman driver needs a private primary address on the default-route
   interface, so `50-nat-vm` builds a Debian-13 guest and re-points the whole box inside
   it — which cannot co-host the host-level lessons (`chapter-02-host`'s `why` has the
   full story and the rejected alternatives).
-  - **Chapter 2 lessons 2–4 share `chapter-02-host`** (PRO2-XS, 16 GB), carrying
+  - **Chapter 2 lessons 1.2.1–1.2.3 share `chapter-02-host`** (PRO2-XS, 16 GB), carrying
     `10`/`20`/`30`/`35` — crun stays rootless podman's default beside opt-in runsc,
     kata-qemu and kata-fc, all asserted from inside at provision time. Order
     10 → 20 → 30 → 35: 20's smoke needs podman, 35 restarts containerd after 30; no
     revert-on-restart trap host-side (kata-static is files, not a DaemonSet).
-  - **Chapter 3 lessons 6–9 share `chapter-03-k8s`** (PRO2-S, 32 GB), one k3s VM carrying
+  - **Chapter 3 lessons 1.3.1–1.3.4 share `chapter-03-k8s`** (PRO2-S, 32 GB), one k3s VM carrying
     `60`/`70`/`75`/`80`/`90`. **Measured on one node:** four kernels answer from inside
     (`6.8.0-106-generic` / `4.19.0-gvisor` / guest `6.18.35` under kata-qemu and kata-fc),
     Kata does not become the default, the OpenShell gateway is Connected beside them, and
-    6/7/8 reproduce 14/16/14 of 19 with the gateway resident — the OOM that used to split
-    lesson 9 onto its own 8 GB box does not reproduce on 32 GB. The old **quota 0/0 on
+    1.3.1/1.3.2/1.3.3 reproduce 14/16/14 of 19 with the gateway resident — the OOM that used to split
+    lesson 1.3.4 onto its own 8 GB box does not reproduce on 32 GB. The old **quota 0/0 on
     everything above PLAY2-MICRO was an identity gate**, lifted by verification; `scw`
     still has no `account quota` subcommand, so a new ceiling costs a failed provision to
     discover. Teardown stays automatic — an EXIT trap in `infra/chapter-02.sh` and
@@ -107,7 +161,7 @@ not fixed**. Report it as such rather than shipping the green run.
     restart k3s, a restart after 80 terminates the kata-deploy DaemonSet (which reverts
     its own install on the way out), and 90 must stay restart-free — it is, touching only
     `systemctl --user` services.
-  - **Chapter 4 (lessons 10–13) shares `openshift-sno`**, so its `run.sh` does not
+  - **Chapter 4 (lessons 1.4.1–1.4.4) shares `openshift-sno`**, so its `run.sh` does not
     provision or destroy. `infra/openshift-sno/install.sh` brings the cluster up (~1.5–2 h)
     and **`infra/down.sh openshift-sno` is a step you own** — €0.263/hr until you run it.
     Its `--from <stage>` resume path is the one people reach for; `REPRODUCE.md` §8 is the
@@ -126,7 +180,7 @@ not fixed**. Report it as such rather than shipping the green run.
   *shape* being copied.
 - **podman is the preferred engine**, Docker only where a tool cannot do podman —
   and the lesson must say which and why.
-- **Each lesson is self-contained** — `cd tutorial/<chapter>/<lesson> && ./run.sh` provisions
+- **Each lesson is self-contained** — `cd tutorial/<phase>/<chapter>/<lesson> && ./run.sh` provisions
   the box it runs on, runs it there, and destroys it. No workspace, no shared package, no
   imports across leaves. Running it *is* the test; there is no repo-wide suite. Each
   lesson writes `report.html` + `report.json` beside itself;
@@ -143,7 +197,7 @@ not fixed**. Report it as such rather than shipping the green run.
   (`infra/substrates/chapter-2/`, `chapter-3/`) and the arrays carry that path;
   `check.sh` dispatches on the basename. Boxes are provisioned with the `scw` CLI directly
   (no Terraform: each box is independent, created/destroyed by its own id, so there is no
-  shared-state lock and parallel provisioning / cancel are trivial). Lessons 1–5 run on
+  shared-state lock and parallel provisioning / cancel are trivial). Lessons 1.1.1 and 1.2.1–1.2.4 run on
   **VMs** (say "VM", not "Instance"); only chapter 4's OpenShift box needs bare metal. That
   was measured, not assumed — `syllabus.md` § *Verified on this hardware*.
 
@@ -178,7 +232,7 @@ own throwaway sandboxes. None of them is a licence to act repo-wide or
 cluster-wide.
 
 - `uv sync` / `uv lock` inside one named lesson leaf
-- **Testing one named lesson end-to-end: `cd tutorial/<chapter>/<lesson> && ./run.sh`.** This
+- **Testing one named lesson end-to-end: `cd tutorial/<phase>/<chapter>/<lesson> && ./run.sh`.** This
   is the test step. It provisions a Scaleway VM, runs the lesson there, and destroys
   it — including on failure. Provisioning is billable and therefore pre-approved
   *only* through this path, for one named lesson at a time, and only because the

@@ -11,39 +11,39 @@ carrying `box` in `lessons.json` instead of hardware:
 
 | Chapter | Box | Why it shares | Who tears it down |
 | :-- | :-- | :-- | :-- |
-| 1 (lesson 1) | its own | a one-lesson chapter *is* one box | an EXIT trap, as everywhere else |
-| 2 (lessons 2–4) | `chapter-02-host` | crun, runsc and Kata installed side by side, so each lesson's `--runtime` is a real choice | an EXIT trap, as everywhere else |
-| 3 (lessons 6–9) | `chapter-03-k8s` | every runtime a workload can select is installed at once and each lesson's `runtimeClassName` is a real choice | an EXIT trap, as everywhere else |
-| 4 (lessons 10–13) | `openshift-sno` | Installing single-node OpenShift takes longer than a lesson does | **you**, and nothing else will |
+| 1 (lesson 1.1.1) | its own | a one-lesson chapter *is* one box | an EXIT trap, as everywhere else |
+| 2 (lessons 1.2.1–1.2.3) | `chapter-02-host` | crun, runsc and Kata installed side by side, so each lesson's `--runtime` is a real choice | an EXIT trap, as everywhere else |
+| 3 (lessons 1.3.1–1.3.4) | `chapter-03-k8s` | every runtime a workload can select is installed at once and each lesson's `runtimeClassName` is a real choice | an EXIT trap, as everywhere else |
+| 4 (lessons 1.4.1–1.4.4) | `openshift-sno` | Installing single-node OpenShift takes longer than a lesson does | **you**, and nothing else will |
 
-**Lesson 5 is the one exception and keeps its own box.** OpenShell's rootless-podman driver
+**Lesson 1.2.4 is the one exception and keeps its own box.** OpenShell's rootless-podman driver
 needs a genuinely private primary address on the default-route interface, which no Scaleway box
-has — so lesson 5's box builds a NAT'd Debian-13 guest and `up.sh` re-points the whole box inside
-it, terminally. A box relocated like that cannot also host lessons 2–4. `chapter-02-host`'s `why`
+has — so lesson 1.2.4's box builds a NAT'd Debian-13 guest and `up.sh` re-points the whole box inside
+it, terminally. A box relocated like that cannot also host lessons 1.2.1–1.2.3. `chapter-02-host`'s `why`
 in `lessons.json` records the constraint and the rejected alternatives.
 
-(Lesson 9 briefly kept its own box too: its resident gateway pushed an 8 GB node over during
-lesson 8's repeated Kata guest boots, and every bigger VM type was quota `0/0`. That quota was an
+(Lesson 1.3.4 briefly kept its own box too: its resident gateway pushed an 8 GB node over during
+lesson 1.3.3's repeated Kata guest boots, and every bigger VM type was quota `0/0`. That quota was an
 identity gate, since lifted — on the 32 GB `PRO2-S` the gateway coexists with the Kata boots,
 measured 2026-08-13.)
 
 `lesson_box()` in `lib.sh` is the one place that resolves it, and every driver calls it
-before touching state, ssh or rsync. `./down.sh lesson-06-k8s` therefore **refuses**: the
+before touching state, ssh or rsync. `./down.sh 1.3.1` therefore **refuses**: the
 lesson does not own a box, and reporting `destroyed, billing stopped` over a cluster that
 is still running is the expensive half of the 2026-08-10 incident wearing a different hat.
 
 ```bash
 cd infra
-./up.sh --list                          # which lessons have a box definition
-./up.sh   lesson-03-container-gvisor    # provision + substrates + assert the boundary
-./run.sh  lesson-03-container-gvisor    # run the lesson there, fetch results/
-./ssh.sh  lesson-03-container-gvisor    # a shell on it
-./down.sh lesson-03-container-gvisor    # destroy it
-./down.sh --all                         # destroy everything, then sweep for orphans
+./up.sh --list       # which lessons have a box definition
+./up.sh   1.2.2      # provision + substrates + assert the boundary
+./run.sh  1.2.2      # run the lesson there, fetch results/
+./ssh.sh  1.2.2      # a shell on it
+./down.sh 1.2.2      # destroy it
+./down.sh --all      # destroy everything, then sweep for orphans
 ```
 
 **Those scripts are the interface and stay independently runnable.** Everything below is a client of
-them, never a replacement — a reader who types `./up.sh lesson-03-container-gvisor` gets exactly what
+them, never a replacement — a reader who types `./up.sh 1.2.2` gets exactly what
 they always got, with or without any of it installed.
 
 ## Watching, from a prompt or from a panel
@@ -65,7 +65,7 @@ to type — reporting nothing at all.
 python3 ctl.py status                   # what exists, what is running, what it costs
 python3 ctl.py status openshift-sno     # its stage table: done, running (with its own clock), ahead
 python3 ctl.py stages openshift-sno     # every stage id and its shipped duration
-python3 ctl.py timings lesson-02-container     # n, avg, min, max, last per stage, from past runs
+python3 ctl.py timings 1.2.1            # n, avg, min, max, last per stage, from past runs
 python3 ctl.py up openshift-sno --from kata    # resume at a stage; status names which one
 python3 ctl.py logs openshift-sno -f    # follow a run someone else started
 python3 ctl.py stop openshift-sno       # SIGTERM the whole process group
@@ -95,13 +95,13 @@ while the lesson believes it got another.
 
 | Lesson | Box | Root vol | €/hr | Why that box |
 |:--|:--|:--|--:|:--|
-| 1 no-sandbox | `PLAY2-NANO` VM | 20 GB | 0.028 | the bare box *is* the lesson |
-| 2 container, 3 gvisor, 4 kata | `chapter-02-host`: a `PRO2-XS` VM | **60 GB** | 0.112 | one shared host carrying crun + runsc + kata-qemu + kata-fc side by side; needs `/dev/kvm` **and** `/dev/vhost-vsock`, which this VM has. 60 GB for the 9.3 GB Kata stack + the devmapper thin-pool ceiling |
-| 5 openshell | `PLAY2-MICRO` VM | 40 GB | 0.055 | OpenShell refuses a public default-route IP, so the box builds a NAT'd guest — which re-points the whole box and is why this lesson cannot share the host above |
+| 1.1.1 no-sandbox | `PLAY2-NANO` VM | 20 GB | 0.028 | the bare box *is* the lesson |
+| 1.2.1 container, 1.2.2 gvisor, 1.2.3 kata | `chapter-02-host`: a `PRO2-XS` VM | **60 GB** | 0.112 | one shared host carrying crun + runsc + kata-qemu + kata-fc side by side; needs `/dev/kvm` **and** `/dev/vhost-vsock`, which this VM has. 60 GB for the 9.3 GB Kata stack + the devmapper thin-pool ceiling |
+| 1.2.4 openshell | `PLAY2-MICRO` VM | 40 GB | 0.055 | OpenShell refuses a public default-route IP, so the box builds a NAT'd guest — which re-points the whole box and is why this lesson cannot share the host above |
 
-**VM, not bare metal — and that was measured rather than assumed.** Lessons 1–3 used
+**VM, not bare metal — and that was measured rather than assumed.** Lessons 1.1.1–1.2.2 used
 to take Elastic Metal on the argument that only metal makes "a container shares
-*this* kernel" literally true. Tested on 2026-08-06, lesson 1's scorecard is
+*this* kernel" literally true. Tested on 2026-08-06, lesson 1.1.1's scorecard is
 row-for-row identical on a VM, gVisor still reports `4.19.0-gvisor`, and Kata still
 boots guest kernel `6.18.35` because a Scaleway VM exposes `/dev/kvm` and
 `/dev/vhost-vsock`. The full measurement is in `syllabus.md` § *Verified on this
@@ -113,7 +113,7 @@ minute OS install per box against under a minute for a VM.
 
 The honest price of the switch: on a VM there **is** a hypervisor underneath, so
 "nothing beneath this kernel" is false. Escaping the container still gives you the
-whole machine, which is the claim lessons 1–3 actually make. Chapter 4's OpenShift
+whole machine, which is the claim lessons 1.1.1–1.2.2 actually make. Chapter 4's OpenShift
 box remains genuine bare metal — `"kind": "baremetal"` in `lessons.json` routes
 `box_create` to `scw baremetal server create` instead.
 
@@ -141,8 +141,8 @@ box remains genuine bare metal — `"kind": "baremetal"` in `lessons.json` route
 
 ## Cost
 
-Roughly **€0.42/hr** with all four of chapters 1–3's boxes up at once (`lesson-01` +
-`chapter-02-host` + `lesson-05` + `chapter-03-k8s` — and usually only one of them is), and
+Roughly **€0.42/hr** with all four of chapters 1–3's boxes up at once (`1.1.1` +
+`chapter-02-host` + `1.2.4` + `chapter-03-k8s` — and usually only one of them is), and
 a lesson occupies its box for well under an hour — so a whole chapter is around a euro,
 *provided `down.sh` runs*. `up.sh` prints the running rate, read live from the Scaleway
 catalogue rather than from a hardcoded table that can quietly go stale.
@@ -150,7 +150,7 @@ catalogue rather than from a hardcoded table that can quietly go stale.
 **Isolation is structural.** A single `./down.sh <lesson>` terminates EXACTLY its own
 box by id and never sweeps — so it cannot touch another lesson's box, tracked or not.
 Independent boxes mean there is no whole-set apply to race and no keep-list to get
-wrong. On 2026-08-10 a single `down` destroyed lesson 2's live box because the old
+wrong. On 2026-08-10 a single `down` destroyed lesson 1.2.1's live box because the old
 Terraform-era sweep terminated every `sbx-*` it saw; that class of bug simply cannot
 happen when a single down never sweeps.
 
@@ -193,12 +193,12 @@ taken before a box existed knows nothing about it.
 | Trap | Symptom | Fix |
 |:--|:--|:--|
 | **Default root volume is 8 GB** | `tar: ... No space left on device` unpacking `kata-static` | size it per lesson in `lessons.json`; Kata needs 40 GB. Metal's big local SSD is why this never showed up before |
-| **A VM logs in as `root`** | lesson 2 claims "rootless" while running as root | cloud-init (rendered by `lib.sh`, passed to `scw create`) makes the unprivileged `agent` user. Elastic Metal logs in as `ubuntu` |
+| **A VM logs in as `root`** | lesson 1.2.1 claims "rootless" while running as root | cloud-init (rendered by `lib.sh`, passed to `scw create`) makes the unprivileged `agent` user. Elastic Metal logs in as `ubuntu` |
 | **cloud-init is not done when sshd answers** | the `agent` user does not exist yet; `Permission denied (publickey)` | `up.sh` waits on `cloud-init status --wait` before touching the box |
 | **`root-volume=local:` on PLAY2** | `couldn't find a local image for this commercial type` | PLAY2 has no local storage — its root volume is Block SSD. `box_create` uses `sbs:`; override with `root_volume_type` in `lessons.json` |
 | **Client MTU blackhole** | ssh hangs at "banner exchange" while `ping` is perfect | `sudo ifconfig <default-if> mtu 1400` on your workstation (revert with `1500`) |
 | **Host key churn** | MITM warnings after a rebuild | expected — we cause every rebuild, so the scripts use `StrictHostKeyChecking=no` with `UserKnownHostsFile=/dev/null` |
-| **A run asked for mid-provision** | the `up` dies in its `sync` stage with rsync rc 23 — the run's mirror and the provision's mirror `--delete` each other's temp files | `up.sh` appends `BOX_READY=1` to `.state/<lesson>.env` only after every stage passed, and `run.sh`'s first stage (`wait-box`) polls it every second, printing `box is being provisioned ... (Ns)` until the box is ready — so `r` seconds after `u` queues instead of racing |
+| **A run asked for mid-provision** | the `up` dies in its `sync` stage with rsync rc 23 — the run's mirror and the provision's mirror `--delete` each other's temp files | `up.sh` appends `BOX_READY=1` to `.state/<id>.env` only after every stage passed, and `run.sh`'s first stage (`wait-box`) polls it every second, printing `box is being provisioned ... (Ns)` until the box is ready — so `r` seconds after `u` queues instead of racing |
 
 ## `check.sh` asserts from the inside
 
@@ -214,7 +214,7 @@ are worth knowing about, because both are easy to reintroduce:
 - `$(… | grep -c Connected || echo 0)` reports the OpenShell gateway **healthy when
   it is down** — `grep -c` prints `0` *and* exits 1, so the capture is `"0\n0"`,
   which is not equal to `"0"`. Match on the pipeline with `grep -q` instead.
-- lesson 5's NAT-guest assertion must be asked of the **host**, via `box_ssh_host`.
+- lesson 1.2.4's NAT-guest assertion must be asked of the **host**, via `box_ssh_host`.
   By the time it runs, `up.sh` has re-pointed the lesson at the guest, and the guest
   has no libvirt — so the obvious `box_ssh` can never pass.
 
@@ -232,8 +232,8 @@ infra/
 ├── tui/                     the optional Ink panel — a client of ctl.py, the only Node here
 ├── openshift-sno/           the chapter-4 cluster: install.sh + its runbook and traps
 ├── substrates/              one script per boundary, run ON the box, grouped by chapter
-│   ├── chapter-2/           10..35 — onto the one host lessons 2-4 share; 40+50 — lesson 5's own box
-│   └── chapter-3/           60..90 — onto the one cluster lessons 6-9 share
+│   ├── chapter-2/           10..35 — onto the one host lessons 1.2.1-1.2.3 share; 40+50 — lesson 1.2.4's own box
+│   └── chapter-3/           60..90 — onto the one cluster lessons 1.3.1-1.3.4 share
 ├── report/                  scorecard -> report.html (stdlib only, no deps)
 └── images/agent/            the one image every lesson runs
 ```
@@ -288,8 +288,8 @@ only**: `up` and `run` both own a `sync` that means different amounts of work. *
 only**: "took 40 minutes before something else broke" is not a duration.
 
 ```console
-$ python3 ctl.py timings lesson-01-no-sandbox
-lesson-01-no-sandbox  ·  up  ·  10 successful run(s) sampled (window 10)
+$ python3 ctl.py timings 1.1.1
+1.1.1  ·  up  ·  10 successful run(s) sampled (window 10)
   stage                       n      avg      min      max     last  manifest
   provision                10       9s       7s      10s       8s     1m30s
   sync                     10    1m02s      47s    1m31s      49s     1m00s

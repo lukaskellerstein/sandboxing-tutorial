@@ -125,17 +125,17 @@ boundary, and reports per-attack RECORDED. Verification status drives the §9 ga
 | new id | leaf (`phase2-audits/…/lesson-LL-audit-<suffix>`) | sensor stack | status |
 |:--|:--|:--|:--|
 | 2.1.1 | ch1/lesson-01-audit-no-sandbox | auditd (host) | BUILD |
-| 2.2.1 | ch2/lesson-01-audit-container | Falco (+custom rules 7,8) | BUILD |
-| 2.2.2 | ch2/lesson-02-audit-container-gvisor | Falco gVisor event source | SPIKE (podman `--pod-init-config`) |
+| 2.2.1 | ch2/lesson-01-audit-container | Tetragon (+a TracingPolicy tagging each attack) | BUILD |
+| 2.2.2 | ch2/lesson-02-audit-container-gvisor | ~~host gVisor event source~~ → `runsc --strace` (G2) | SPIKE (podman `--pod-init-config`) |
 | 2.2.3 | ch2/lesson-03-audit-container-kata | in-guest sidecar (needs BTF debug kernel) | SPIKE (kernel-debug present?) |
 | 2.2.4 | ch2/lesson-04-audit-container-openshell | OCSF (exists) + auditd-in-guest | BUILD |
 | 2.2.5 | ch2/lesson-05-audit-compose-gvisor-openshell | doc-mirror of 1.2.5 | STUB |
 | 2.2.6 | ch2/lesson-06-audit-compose-kata-openshell | doc-mirror of 1.2.6 | STUB |
-| 2.3.1 | ch3/lesson-01-audit-k8s | Falco + k3s API audit | BUILD |
-| 2.3.2 | ch3/lesson-02-audit-k8s-gvisor | Falco gVisor source + API audit | SPIKE (k3s runsc bridge) |
+| 2.3.1 | ch3/lesson-01-audit-k8s | Tetragon + k3s API audit | BUILT (see the 2026-08-15 amendment: NOT k8s-enriched) |
+| 2.3.2 | ch3/lesson-02-audit-k8s-gvisor | `runsc trace` + API audit (G2) | SPIKE (k3s runsc bridge) |
 | 2.3.3 | ch3/lesson-03-audit-k8s-kata | k8s API audit + in-guest sidecar | SPIKE |
-| 2.3.4 | ch3/lesson-04-audit-k8s-openshell | OCSF + Falco + API audit | BUILD |
-| 2.3.5 | ch3/lesson-05-audit-compose-gvisor-openshell | OCSF + Falco gVisor source | SPIKE |
+| 2.3.4 | ch3/lesson-04-audit-k8s-openshell | OCSF + Tetragon + API audit | BUILD |
+| 2.3.5 | ch3/lesson-05-audit-compose-gvisor-openshell | OCSF + `runsc trace` (G2) | SPIKE |
 | 2.3.6 | ch3/lesson-06-audit-compose-kata-openshell | OCSF (+ optional sidecar) | BUILD (OCSF-over-Kata proven by 1.3.6) |
 | 2.4.1 | ch4/lesson-01-audit-openshift-pod | node auditd + OpenShift API audit | SPIKE (RHCOS auditd on?) |
 | 2.4.2 | ch4/lesson-02-audit-openshift-scc | node auditd + API audit | SPIKE |
@@ -207,7 +207,50 @@ finding, and the motivation for phase 2.
 
 ## 7. Stage C — the 19 phase-2 audit leaves
 
-**Box topology (co-residency rule):** a **host eBPF sensor (Falco/Tetragon) taxes `syscall_ms`**, so
+> **AMENDMENT 2026-08-15 — the host eBPF sensor is Tetragon (pinned v1.7.0), not Falco.** Everywhere
+> below that says Falco, read Tetragon; `substrates/chapter-{2,3}-audit/falco` is
+> `.../tetragon`, and `check.sh`'s arm dispatches on `tetragon`. This is **not** a capability
+> ranking — on the runc rungs both sensors see the same thing, and by the conventional measures
+> Falco is the more established choice (CNCF *graduated* Feb 2024; Tetragon is not a CNCF project).
+> The reason is **not mixing instruments across rungs**: if the container rung used one sensor and
+> the k8s rung another, a reader could not tell whether a difference between them came from the
+> *boundary* or the tool, which is the same argument phase 1 makes for one fixed attack suite.
+> Tetragon covers the three positions phase 2 needs with one mechanism — host, Kubernetes with
+> native pod enrichment, and the candidate in-guest sidecar under Kata (2.3.3) — where Falco needs
+> the k3s containerd socket wired by hand and is still not the in-guest story. The *boundary* findings
+> are untouched — G2's gVisor blindness and 2.2.3's Kata zero are properties of **where** a host
+> sensor sits, not of which one it is (Falco removed its gVisor source; Tetragon never had one).
+>
+> **One rung's number DID move, and it is a correction rather than a regression: 2.2.1 reads 7/13,
+> not 10/13.** `bpf`, `io_uring_setup` and `perf_event_open` are hooked and still read `NOT_LOGGED`,
+> because podman's default seccomp refuses all three at **syscall entry** under `--cap-drop ALL` (it
+> allows the first two only with `CAP_SYS_ADMIN` and does not list `io_uring_setup` at all, so it
+> falls to `defaultAction: SCMP_ACT_ERRNO`). seccomp is evaluated before the `sys_enter` tracepoint
+> and an errno verdict never runs the syscall body, so **no** host sensor can see them — which is why
+> the old `LOGGED` cannot have been the workload's call. Measured proof that it is the filter and not
+> the kernel: the node carries `CONFIG_IO_URING=y`, the identical call returns `fd=3` under
+> `--security-opt seccomp=unconfined`, and `perf_event_open`'s errno moves `EPERM` (the filter) →
+> `EACCES` (the kernel's own check). The boundary blocked these three and left no evidence it had
+> done so; the only possible witness is the enforcing mechanism itself (`SECCOMP_RET_LOG` → auditd
+> `type=SECCOMP`). 2.2.2 is the contrast — gVisor's kernel is in user space, so the sentry records
+> all three *before* anything refuses them.
+>
+> Three mechanics the migration pinned down on the box, each of which had already produced a wrong
+> reading before it was found:
+> - `read_credentials` hooks **both `sys_open` and `sys_openat`**, not `security_file_open`. The LSM
+>   hook only fires once an inode is resolved, so a read of a credential file that does not exist —
+>   the hardened container's case — never reaches it, and the probe would read `NOT_LOGGED` for a
+>   boundary that blocked a *visible* attempt. Both syscalls, because glibc routes `open()` to
+>   `openat` while musl on x86_64 calls `open` directly; hooking one silently misses the other libc.
+> - Events are attributed to the workload by their **pid namespace** (`process.ns.pid`, needs
+>   `--enable-process-ns`), **never** by `process.docker`. Measured: under rootless podman that id
+>   lands on the host-side `podman`/`crun`/`conmon` and *not* on the container's own process — the
+>   inverse of what the mapping needs. `check.sh` asserts the attribution at provision time.
+> - The pid namespace must carry an **`inum`**. Tetragon emits a synthetic `<kernel>` process whose
+>   ns block exists but is empty, and "empty is not host" put one phantom fingerprint in 2.2.3's host
+>   trail — breaking its "fully blind" headline with a 1 that was never a workload event.
+
+**Box topology (co-residency rule):** a **host eBPF sensor (Tetragon) taxes `syscall_ms`**, so
 it must not share a box with a phase-1 lesson. Phase-2 chapters 2 and 3 therefore get their **own**
 shared audit boxes carrying that chapter's phase-1 substrates **plus** the sensor substrates:
 `chapter-02-audit-host`, `chapter-03-audit-k8s`. Phase-2 chapter 1 gets its own small box
@@ -217,8 +260,8 @@ eBPF, so co-residency does not corrupt a cost metric. New audit runners `infra/c
 `chapter-03-audit.sh` mirror the EXIT-trap pattern of the existing ones.
 
 **New substrate scripts** (numeric prefix = order, per chapter's audit box):
-- `substrates/chapter-2-audit/`: `auditd`, `falco` (with custom rules for attacks 7/8), `falco-gvisor` (generate `--gvisor-config`, wire the runtime), `kata-ebpf-kernel` (register a `kata-qemu-ebpf` RuntimeClass/config pointing at the BTF debug kernel) + in-guest sidecar manifest.
-- `substrates/chapter-3-audit/`: `falco` (`--set collectors.containerd.socket=/run/k3s/containerd/containerd.sock`), `k8s-api-audit` (audit policy + webhook/file backend), `falco-gvisor`, the Kata sidecar/kernel pieces.
+- `substrates/chapter-2-audit/`: `auditd`, **`tetragon`** (pinned tarball install + the `sbx-sandboxing` TracingPolicy; the shipped systemd unit is DISABLED so the lesson owns the capture window and the pinned BPF maps), `kata-debug-kernel` (make the BTF/AUDITSYSCALL debug kernel selectable per run by annotation) + in-guest sidecar manifest.
+- `substrates/chapter-3-audit/`: **`tetragon`** (same install and policy as chapter 2, and the SAME configuration — see the amendment below; `--enable-k8s-api` was specified here and is NOT used), `k8s-api-audit` (audit policy + file backend on the k3s apiserver), `72-k8s-gvisor-trace` (a second `gvisor-trace` RuntimeClass selecting runsc with `--strace`), and the Kata sidecar/kernel pieces for 2.3.3.
 - `check.sh` gains assertion arms for each new substrate basename (dispatch is on `${sub##*/}`).
 
 **Each phase-2 leaf** = the phase-1 twin's shape + a sensor stack + host-side per-probe RECORDED
@@ -231,12 +274,12 @@ its step-0 and **STOP + report** if it fails — do not fabricate a green leaf:
 | Gate | For | Check | If it fails |
 |:--|:--|:--|:--|
 | G1 | 2.2.3, 2.3.3, 2.4.3, 2.4.6 | `ls /opt/kata/share/kata-containers/ \| grep -i debug` on `chapter-02-host` — is the BTF `kernel-debug` in the pinned Kata 4.0.0 tarball? | leaf needs a custom kernel build; report scope change |
-| G2 | 2.2.2, 2.3.2, 2.3.5 | Falco gVisor event source under **podman** (2.2.2) / **k3s** (2.3.x): does `--pod-init-config` wire up and stream? | fall back to Docker for that leaf and say why, or mark doc-only |
+| G2 | 2.2.2, 2.3.2, 2.3.5 | a host sensor's gVisor event source under **podman** (2.2.2) / **k3s** (2.3.x): does `--pod-init-config` wire up and stream? | fall back to Docker for that leaf and say why, or mark doc-only |
 | G3 | 2.4.1, 2.4.2, 2.4.4 | `oc debug node/… -- systemctl is-active auditd` — is RHCOS auditd already on? | if on, the "0 recorded" claim is already false for phase-1 ch4 — note it; if off, enable via MachineConfig |
 | G4 | 2.2.3/2.3.3 sidecar | can a sidecar be injected into an OpenShell-managed `Sandbox` CR (for the OpenShell-composed audit leaves)? | mark the sidecar half doc-only for those leaves |
 
 **Substrate order stays load-bearing** on the k8s audit box: nothing may restart k3s after Kata
-(`80`) — Falco's Helm install does not restart k3s (safe), but the gVisor `pod_init_config` edits
+(`80`) — the tetragon substrate restarts nothing (it disables the shipped unit), but the gVisor `pod_init_config` edits
 containerd config (a restart) and must sit with the gVisor substrate, never in a post-Kata script.
 
 ---
@@ -291,7 +334,7 @@ passes on re-run with unchanged code is intermittent, not fixed — report as su
 | **Cross-chapter `../` link left wrong** | broken lesson navigation | audit every relative link, not number-only swap (§8) |
 | **Sensor on a shared phase-1 box** | eBPF taxes `syscall_ms`, corrupts phase-1 cost | own audit boxes for ch2/ch3; passive/in-guest only on shared ch4 (§7) |
 | **SPIKE leaf shipped on unverified infra** | a fake-green audit lesson — the exact dishonesty this repo forbids | discovery gate + STOP-and-report per SPIKE (§7) |
-| **k3s restart after Kata** | reverts kata-deploy DaemonSet | gVisor `pod_init_config` stays with the gVisor substrate; Falco Helm doesn't restart k3s (§7) |
+| **k3s restart after Kata** | reverts kata-deploy DaemonSet | gVisor `pod_init_config` stays with the gVisor substrate; the tetragon substrate restarts nothing (§7) |
 | **Chapter-runner `boxes()` drifts from ids** | EXIT trap tears down nothing → billable box left up | route runners through the single `lesson_box` (A3); teardown-verify in DoD |
 | **Doubled cost** | +3 audit boxes | chapter 4 reuses the cluster; audit boxes are per-run and torn down like phase-1 |
 
@@ -302,3 +345,107 @@ passes on re-run with unchanged code is intermittent, not fixed — report as su
 - **Depends on spec-04 committed** — renumbers the leaves it created; land on a clean tree.
 - **Reverses spec-02 §3's "do not renumber / flat results"** by the user's instruction — §3 documents why the name-glob rationale no longer holds. Specs 01–04 are left as historical record (they predate the id scheme); do not rewrite them.
 - **User decisions (2026-08-14):** dotted id canonical (over unique-name glob); full build in one spec (over staged sensor infra); mirror all 6 composition leaves (over runnable-only). The concern that "full build" encodes unverified infra is honoured by the §7/§9 discovery gates, not by narrowing scope.
+
+---
+
+## Amendment (2026-08-15) — §7's Kubernetes pod-enrichment claim is withdrawn
+
+§7 justified Tetragon partly on **native Kubernetes pod enrichment**: `--enable-k8s-api` would stamp
+every event with its pod and namespace, so the k8s rung would need no containerd socket wired by hand
+and a lesson could map an event to its workload by name. **Measured on a live k3s box, none of that
+holds**, and the flag is actively harmful:
+
+1. Tetragon **exits** with it — the flag also enables a TracingPolicy CRD watcher, and the release
+   tarball ships no CRDs (`no matches for kind "TracingPolicy" in version "cilium.io/v1alpha1"`).
+   `check.sh` saw this as `hits=0`, i.e. exactly like a sensor that observed nothing.
+2. With the CRD watcher off it runs and still resolves **no pod** — `process.pod` is null, with and
+   without `NODE_NAME`.
+3. Tetragon itself asks for `--enable-cri` against k3s's **non-standard** containerd socket — the
+   hand-wiring §7 said Tetragon avoided and Falco would have needed.
+4. With `--enable-cgidmap --enable-cri --cri-endpoint=…` the CRI client initialises cleanly and
+   `process.pod` is **still** null.
+5. The flag delays every event up to **30 s** in the EventCache while retrying a lookup that never
+   resolves, so a capture window closing promptly reports `NOT LOGGED` for everything the workload did.
+
+**The choice of Tetragon still stands**, on §7's *other* and stronger argument: one instrument across
+every rung, so a rung-to-rung difference is attributable to the boundary rather than to the tool. The
+enrichment was a bonus that does not exist. The leaves attribute events to one named pod by
+**container id** (`process.docker` matched against the pod's `containerID` read from the k8s API),
+which is stronger than the sensor's self-report and keeps the sensor configuration byte-identical to
+chapter 2's.
+
+Note the attribution rule **inverts** between chapters, and both directions are measured: under
+rootless podman `process.docker` is empty on the workload and lands on the host-side runtime (so 2.2.1
+uses the pid namespace); under the kubelet it is populated, and the pid namespace is not specific
+enough because the stand-in gateway is a second pod in the same namespace.
+
+---
+
+## Amendment (2026-08-15) — G1's Kubernetes sidecar prediction is withdrawn
+
+§ the discovery gates reframed G1 as: a workload container under nerdctl cannot stand up a kernel-side
+sensor inside the Kata guest, **but** a privileged *Kubernetes* pod holding "the guest's init context"
+can — so the eBPF/auditd sidecar lands in 2.3.3.
+
+**Measured while building 2.3.3, and it is wrong.** All four combinations return `EPERM` from the
+guest's audit netlink:
+
+| sidecar | CapEff | result |
+| :-- | :-- | :-- |
+| uid 1000 + `capabilities.add` | `0000000000000000` (added caps are dropped for a non-root user) | EPERM |
+| `runAsUser: 0` + explicit caps | `000000e0e82c25fb` | EPERM |
+| `runAsUser: 0` + `privileged: true` | `000001ffffffffff` | EPERM |
+| the above **+ `hostPID: true`** | `000001ffffffffff` | EPERM |
+
+The kernel gates the audit netlink on the **initial pid namespace**, and Kata's agent puts the whole
+pod in a child one. The decisive evidence is that the process list under `hostPID: true` is
+**identical** — `pause` is still PID 1 — so **under Kata the kubelet's "host" is the sandbox, not the
+VM's init**. No pod-spec field reaches the guest's init namespace, and privilege is not what is being
+checked.
+
+**What Kubernetes actually contributes** is `shareProcessNamespace: true`: one pid namespace for every
+container in the pod, *inside the guest*. That is enough for a **ptrace** tracer, which needs no
+netlink and no initial namespace — and it is something nerdctl cannot offer at all, because there one
+container is one VM and there is nothing to share. So the rung is rescued, with a different sensor
+than predicted.
+
+The guest kernel is **not** the limitation: 2.3.3's sidecar loads a real two-instruction eBPF program
+successfully, with BTF present on the debug kernel. The fence is specific to audit; eBPF is not
+namespace-gated. A CO-RE eBPF sensor could live in the guest — at the same per-pod deployment cost the
+tracer pays, which is the finding the lesson closes on.
+
+---
+
+## Amendment (2026-08-15) — chapter 4 built; G3 passes with a caveat, G4 is unnecessary, 2.4.6 is impossible
+
+The SNO cluster was built, used and destroyed on 2026-08-15, and all four buildable chapter-4 audit
+leaves (2.4.1–2.4.4) are verified. Three things the spec did not anticipate:
+
+**G3 passes, and the caveat becomes the chapter's finding.** RHCOS runs `auditd`, but with two
+`exclude` rules and no syscall rules — it is switched on and watching nothing. Rules can be added at
+run time via `oc debug node` + `auditctl` (no MachineConfig, no reboot) and the trail is readable with
+`oc adm node-logs`, but those rules are **ephemeral**. So the sensor a managed platform gives you for
+free watches the **control plane**, not the kernel, which is the phase-2 mirror of chapter 4's phase-1
+thesis that OpenShift adds admission rather than isolation.
+
+**G4 is unnecessary.** OpenShell on OpenShift is ordinary runc, so the node's auditd sees the sandbox
+directly (923 paths attributed in 2.4.4) — no sidecar needed. Where one *would* be needed, behind Kata
+in 2.4.3, the platform blocks it: no `strace` in the stock UBI image, no way to build one (RHCOS has
+no podman; no `*.apps` route to a registry), and `dnf` refused.
+
+**2.4.6 is blocked, because 1.4.6 does not work.** OpenShell's supervisor builds a nested network
+namespace with a veth pair, and the OSC Kata **guest image** ships a module set that omits `veth.ko` —
+`ip link add … type veth` fails with `Unknown device type` and the sandbox crashloops. The guest
+*kernel* is the node's RHEL kernel version (`5.14.0-427.138.1.el9_4`, identical strings), so this is a
+packaging difference, not a kernel-config one; Red Hat's KATA-5628 is the same bug class for `nfsv4` /
+`dns_resolver`. The identical driver-config overlay works on k3s (1.3.6 / 2.3.6), so nothing here is a
+flaw in the composition. **Red Hat has it scheduled — KATA-5840, fixVersion OSC 1.14 (2026-10-01).**
+1.4.6's README asserts the composition holds on OpenShift; that assertion is untested-and-false and
+needs reframing. The full record, including why no workaround exists on our side and the probe to run
+before retrying, is 2.4.6's README (`tutorial/phase2-audits/chapter-4-openshift/lesson-06-audit-compose-kata-openshell/README.md`).
+
+**Attribution needed a third mechanism.** Chapter 2 uses the pid namespace, chapter 3 the container
+id, chapter 4 the pod's **SELinux MCS** — each forced by what the layer underneath exposes. uid is the
+trap on OpenShift (`USER 1001` is shared with node components), and the MCS lives on the SYSCALL
+record's `subj=`, not on the PATH companion's `obj=`, so records must be correlated by audit event
+serial.

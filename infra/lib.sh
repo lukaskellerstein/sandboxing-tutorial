@@ -46,7 +46,7 @@ say() {
 # by SBX_EVENT_FILE, which ctl.py sets and tails; with nothing set, every function here is a no-op
 # and the scripts print exactly what they always printed.
 #
-# That no-op is the load-bearing part. `./up.sh lesson-04` typed by hand must never become dependent
+# That no-op is the load-bearing part. `./up.sh 1.2.3` typed by hand must never become dependent
 # on a supervisor existing — the scripts are the tutorial's real interface, and ctl.py is a client
 # of them rather than the other way round.
 #
@@ -261,13 +261,52 @@ lesson_field() {
 # in lesson_field, rather than here with a jq error.
 lesson_box() { jq -r --arg l "$1" '.[$l].box // $l' "${LESSONS_JSON}"; }
 
+# --- the id <-> leaf-path resolver -------------------------------------------
+#
+# A lesson's id is `P.C.L`, DERIVED from where its leaf sits in the tree — phase number from
+# `phaseP-*`, chapter number from `chapter-C-*`, leaf number from `lesson-LL-*`. The tree is the one
+# place that mapping lives; the id is computed, never stored a second time. These two functions are
+# the only implementation of that computation in bash, and render.py/overall.py's ids.py is its twin.
+
+# id (P.C.L) -> repo-relative leaf path. Exactly one match; zero or many is a broken tree, the same
+# "no silent first-wins" contract run.sh's old name-glob carried.
+lesson_relpath() {
+  local id="$1" p c l pad match="" d
+  IFS=. read -r p c l <<<"${id}"
+  [ -n "${p}" ] && [ -n "${c}" ] && [ -n "${l}" ] || die "not a dotted lesson id: '${id}' (want P.C.L)"
+  pad=$(printf '%02d' "$((10#${l}))" 2>/dev/null) || die "lesson id '${id}' has a non-numeric leaf part"
+  for d in "${REPO_ROOT}"/tutorial/phase"${p}"-*/chapter-"${c}"-*/lesson-"${pad}"-*; do
+    [ -d "${d}" ] || continue
+    [ -z "${match}" ] || die "lesson id ${id} matches more than one leaf directory"
+    match="${d#"${REPO_ROOT}"/}"
+  done
+  [ -n "${match}" ] || die "no leaf directory for lesson id ${id} (tutorial/phase${p}-*/chapter-${c}-*/lesson-${pad}-*)"
+  echo "${match}"
+}
+
+# leaf directory -> its dotted id, read from the three folder number prefixes. The inverse of
+# lesson_relpath; each leaf run.sh reads the same three basenames inline so it stays standalone.
+lesson_id_of_dir() {
+  local dir="$1" p c l
+  p=$(basename "$(dirname "$(dirname "${dir}")")")
+  p=${p#phase}
+  p=${p%%-*}
+  c=$(basename "$(dirname "${dir}")")
+  c=${c#chapter-}
+  c=${c%%-*}
+  l=$(basename "${dir}")
+  l=${l#lesson-}
+  l=${l%%-*}
+  echo "${p}.${c}.$((10#${l}))"
+}
+
 # Hardware belongs to the BOX, never to the lesson, so these resolve through lesson_box first. That
 # is what lets a shared lesson carry no kind/type/image of its own — duplicating those onto all four
 # would be the "generated second copy" lessons.json's own header warns drifts.
 lesson_kind() { lesson_field "$(lesson_box "$1")" kind; }
 lesson_type() { lesson_field "$(lesson_box "$1")" type; }
 
-# Substrate scripts, in order. An empty list is meaningful: lesson 1 IS the bare box.
+# Substrate scripts, in order. An empty list is meaningful: lesson 1.1.1 IS the bare box.
 # Read from the BOX: the substrates are what is installed on the machine, and on a shared cluster all
 # four lessons see the same set.
 lesson_substrates() {
@@ -281,9 +320,12 @@ lesson_substrates() {
 # leaves a tracked, tearable box rather than an invisible orphan. Anything the account holds that has
 # no .state file is caught by down.sh's prefix sweep.
 
-# The Scaleway console name for a lesson's box: `sbx-<lesson without the leading 'lesson-'>`. The one
-# place that mapping lives (down.sh's sweep and by-name teardown reuse it).
-box_name() { echo "sbx-${1#lesson-}"; }
+# The Scaleway console name for a lesson's box: `sbx-<key>`. The one place that mapping lives
+# (down.sh's sweep and by-name teardown reuse it). A Scaleway name cannot carry dots, so a dotted
+# lesson id (`1.1.1`, for a lesson on its own box) is slugged to `sbx-1-1-1`; a descriptive box name
+# (`chapter-02-host`) is unchanged. The legacy `lesson-` strip is kept so an old-style name still maps.
+box_slug() { echo "${1//./-}"; }
+box_name() { echo "sbx-$(box_slug "${1#lesson-}")"; }
 
 # The first IPv4 address in an instance's JSON, tolerating both the `public_ips[]` array and the
 # older singular `public_ip`. Empty when none is assigned yet.
@@ -295,10 +337,12 @@ box_json_ipv4() {
 # safe here — the ssh key is a single line of base64 (no `|`, `&` or newlines) and the hostname is a
 # lesson name. Prints the path of a temp file the caller is responsible for removing.
 render_cloud_init() {
-  local lesson="$1" pub out
+  local lesson="$1" pub out host
   pub=$(cat "${SSH_KEY}.pub")
+  # A dotted lesson id would become a dotted hostname (read as host.domain); slug it like box_name.
+  host=$(box_slug "${lesson}")
   out=$(mktemp "${TMPDIR:-/tmp}/sbx-cloud-init.XXXXXX")
-  sed -e "s|\${hostname}|${lesson}|g" -e "s|\${ssh_public_key}|${pub}|g" "${CLOUD_INIT_TMPL}" >"${out}"
+  sed -e "s|\${hostname}|${host}|g" -e "s|\${ssh_public_key}|${pub}|g" "${CLOUD_INIT_TMPL}" >"${out}"
   echo "${out}"
 }
 
@@ -592,7 +636,7 @@ box_ssh() {
   ssh -F "$(ssh_config_file "${lesson}")" box "$@"
 }
 
-# The box we PROVISIONED, as opposed to wherever the lesson ended up running. For lesson 5 those are
+# The box we PROVISIONED, as opposed to wherever the lesson ended up running. For lesson 1.2.4 those are
 # different machines: the lesson runs inside a NAT'd guest, but questions about the hypervisor —
 # "is the guest domain running?" — can only be answered by the host underneath it. Asking the guest
 # gets `virsh: command not found`, which reads as a failed boundary rather than a wrong addressee.

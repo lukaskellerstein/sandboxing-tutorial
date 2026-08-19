@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Assert a lesson's boundary FROM INSIDE the sandbox, never from the flag that was passed.
 #
-#   ./check.sh lesson-03-container-gvisor
+#   ./check.sh 1.2.2
 #
 # Every check here answers "whose kernel replied?" rather than "did the command exit 0". A container
 # that silently fell back to runc exits 0 and prints everything the lesson expects; the only thing
@@ -16,7 +16,7 @@ source "${HERE}/lib.sh"
 
 LESSON="${1:?usage: ./check.sh <lesson>}"
 # Every assertion below interrogates a MACHINE, so resolve to the box up front and use only that.
-# `./check.sh lesson-07-k8s-gvisor` and `./check.sh chapter-03-k8s` must prove the same things,
+# `./check.sh 1.3.2` and `./check.sh chapter-03-k8s` must prove the same things,
 # because on a shared chapter they are the same node — and the substrate list they dispatch on
 # belongs to the box, so a four-substrate cluster asserts all four boundaries whichever name you use.
 BOX=$(lesson_box "${LESSON}")
@@ -39,7 +39,7 @@ FAILED=0
 #: SAME guest anyway to be about one sandbox.
 #:
 #: The PCI count is the field that matters, because the kernel string CANNOT tell QEMU from
-#: Firecracker: both boot the identical guest kernel, and that identity is the finding lessons 4 and
+#: Firecracker: both boot the identical guest kernel, and that identity is the finding lesson 1.2.3 and
 #: 8 are built on rather than a weakness of this check. Firecracker boots `pci=off` and puts virtio
 #: on MMIO; QEMU emulates a PCI host bridge. Measured: 10 devices under kata-qemu, 0 under kata-fc.
 # shellcheck disable=SC2016  # must expand inside the guest, not here
@@ -58,7 +58,7 @@ kata_guest_facts() {
 # --- chapter 3 helpers -------------------------------------------------------
 
 # Run one throwaway pod and return what it printed. The runtime class is the ONLY thing that varies
-# between lessons 6, 7 and 8, which is the chapter's whole argument — so it is the only parameter.
+# between lessons 1.3.1, 1.3.2 and 1.3.3, which is the chapter's whole argument — so it is the only parameter.
 #
 # `--command` overrides the image's ENTRYPOINT (which would otherwise run the attack suite), and
 # --image-pull-policy=IfNotPresent keeps the kubelet off Docker Hub for an image already on the node.
@@ -112,7 +112,7 @@ k8s_curl_status() {
 # This is the single most important assertion in chapter 3. k3s's default CNI is flannel, which does
 # not implement NetworkPolicy at all; enforcement comes from a controller k3s embeds alongside it. On
 # a cluster where that controller is off, every NetworkPolicy object is still accepted, still listed,
-# and still completely ignored — so lesson 6 would report a scoreboard full of BLOCKED rows for
+# and still completely ignored — so lesson 1.3.1 would report a scoreboard full of BLOCKED rows for
 # attacks that in fact walked straight out of the pod.
 #
 # Both halves are required, and the order is why. A pod that cannot reach the internet for some
@@ -167,7 +167,7 @@ YAML"
   if [ "${before}" = "000" ] || [ -z "${before}" ]; then
     fail "NetworkPolicy: the pod could NOT reach the internet even with no policy — the control is untested, not proven"
   elif [ "${after}" != "000" ]; then
-    fail "NetworkPolicy: deny-all egress was ACCEPTED BUT NOT ENFORCED after ${waited}s (still ${after}) — lesson 6's scoreboard would be a lie"
+    fail "NetworkPolicy: deny-all egress was ACCEPTED BUT NOT ENFORCED after ${waited}s (still ${after}) — lesson 1.3.1's scoreboard would be a lie"
   else
     pass "NetworkPolicy is enforced (took ${waited}s to take effect): ${before} without it, no route with it"
   fi
@@ -194,7 +194,7 @@ for sub in $(lesson_substrates "${BOX}"); do
     20-runsc)
       # Rootful, and that is not laziness: rootless podman cannot drive runsc at all. The systemd
       # cgroup manager gets "Interactive authentication required" from the system D-Bus, and the
-      # cgroupfs manager cannot write /sys/fs/cgroup/cgroup.subtree_control. Lesson 3 runs rootful
+      # cgroupfs manager cannot write /sys/fs/cgroup/cgroup.subtree_control. Lesson 1.2.2 runs rootful
       # for the same reason, on BOTH runtimes, so its one-variable comparison still holds.
       got=$(box_ssh "${BOX}" "sudo podman run --rm --network none --runtime runsc ${ALPINE} uname -r" 2>/dev/null || echo FAILED)
       case "${got}" in
@@ -222,7 +222,7 @@ for sub in $(lesson_substrates "${BOX}"); do
     35-containerd-devmapper)
       # A SECOND hypervisor under the same runtime, so the question is no longer "did a VM boot" —
       # case 30 settled that — but "WHICH VMM booted". The kernel string cannot answer it: both
-      # hypervisors boot the identical guest kernel, which is the finding lesson 4 is built on.
+      # hypervisors boot the identical guest kernel, which is the finding lesson 1.2.3 is built on.
       #
       # /sys/bus/pci/devices does answer it. Firecracker has no PCI bus at all (`pci=off` is on its
       # kernel command line) and puts virtio on MMIO instead; QEMU emulates a PCI host bridge and
@@ -309,13 +309,13 @@ for sub in $(lesson_substrates "${BOX}"); do
       fi
 
       # The EXPECTED answer here is "identical", and it is the whole of lesson 6. A pod composes
-      # namespaces and cgroups exactly as lesson 2's container did; it is not a kernel boundary, and
-      # a reader has to see that stated by the machine before lessons 7 and 8 mean anything.
+      # namespaces and cgroups exactly as lesson 1.2.1's container did; it is not a kernel boundary, and
+      # a reader has to see that stated by the machine before lessons 1.3.2 and 1.3.3 mean anything.
       got=$(k8s_pod_output "${BOX}" sbxchk-kernel "" uname -r)
       if [ "${got}" = "${NODE_KERNEL}" ]; then
         pass "pod runs on the NODE kernel (${got}) — correct, a pod is not a kernel boundary"
       else
-        fail "pod kernel '${got}' != node '${NODE_KERNEL}' — something is already intercepting, and lesson 6's baseline is wrong"
+        fail "pod kernel '${got}' != node '${NODE_KERNEL}' — something is already intercepting, and lesson 1.3.1's baseline is wrong"
       fi
 
       k8s_netpol_enforced "${BOX}"
@@ -402,7 +402,7 @@ for sub in $(lesson_substrates "${BOX}"); do
             fail "Firecracker: guest kernel == node kernel (${fk}) — no VM was created, the shim fell back"
           elif [ "${fpci}" != "0" ]; then
             # The kernel string cannot separate the two hypervisors — both boot the same guest kernel,
-            # which is lesson 8's finding rather than a gap here. The PCI bus can: Firecracker boots
+            # which is lesson 1.3.3's finding rather than a gap here. The PCI bus can: Firecracker boots
             # `pci=off` and puts virtio on MMIO, QEMU emulates a PCI host bridge.
             fail "Firecracker: the guest has ${fpci} PCI devices — Firecracker has no PCI bus, so this is QEMU under the kata-fc name"
           else
@@ -427,6 +427,271 @@ for sub in $(lesson_substrates "${BOX}"); do
         pass "Agent Sandbox CRD installed (${crd})"
       else
         fail "Agent Sandbox CRD missing — OpenShell's kubernetes driver has nothing to create objects against"
+      fi
+      ;;
+
+    10-auditd)
+      # The phase-2 host sensor. Assert it is RUNNING and its keyed rules are loaded — a lesson that
+      # reads an empty trail would report "nothing was recorded" when the truth is "nothing was
+      # watching", the audit-side twin of this repo's silent-fallback failure.
+      active=$(box_ssh "${BOX}" "systemctl is-active auditd 2>/dev/null || echo inactive" 2>/dev/null | tail -1)
+      rules=$(box_ssh "${BOX}" "sudo auditctl -l 2>/dev/null | grep -c sbx_" 2>/dev/null | tail -1)
+      if [ "${active}" = "active" ] && [ "${rules:-0}" -gt 0 ]; then
+        pass "auditd: active with ${rules} sandboxing rules loaded — the host sensor is watching"
+      else
+        fail "auditd: active='${active}' rules='${rules:-0}' — the sensor is not watching, 2.1.1's trail would be a false blank"
+      fi
+      ;;
+
+    tetragon)
+      # Assert the host sensor END TO END, not that a binary exists: start Tetragon with the lesson's
+      # own policy, trigger one fingerprint FROM INSIDE A CONTAINER, and read it back out of the
+      # export file. A policy that never compiles, a kprobe that never attaches, or a symbol this
+      # kernel does not carry would all leave 2.2.1's trail empty — and an empty trail reads exactly
+      # like "the container hid everything", which is this repo's characteristic false blank.
+      #
+      # The trigger is ALPINE on purpose. alpine is musl, which calls the `open` syscall where glibc
+      # calls `openat`; a policy hooking only one passes a glibc trigger and then silently records
+      # nothing for the other libc. Measured 2026-08-15 — this is how the sys_open gap was found.
+      #
+      # The second number is the discovery gate the whole per-probe mapping rests on: can an event be
+      # ATTRIBUTED to the workload? NOT via `process.docker` — measured 2026-08-15, under rootless
+      # podman that id lands on the host-side podman/crun/conmon and NOT on the container's own
+      # process, so gating on it would credit the workload with the runtime's execs while missing
+      # everything it actually did. The attribution is the process's own pid namespace, which the
+      # kernel cannot be talked out of, and which needs --enable-process-ns to be exported.
+      #
+      # ON A CLUSTER the trigger is a POD and the attribution is by CONTAINER ID, not by pid
+      # namespace. Both halves matter. A pid-namespace test cannot tell the attack pod from the
+      # gateway pod running beside it, and every 2.3.x leaf has both alive at once — so a check that
+      # only proved "some container" would bless a mapping that credits the wrong workload. The
+      # container id is available here and was not in chapter 2: `process.docker` comes from the
+      # cgroup, which rootless podman left empty and the kubelet fills in.
+      #
+      # What is deliberately NOT asserted is Tetragon's own `--enable-k8s-api` pod enrichment. It
+      # does not resolve pods on this box and it delays every event up to 30 s — the full measurement
+      # is in substrates/chapter-3-audit/tetragon.sh. This arm asserts the configuration we ship.
+      ver="${TETRAGON_VERSION_NOTE:-v1.7.0 (pinned; the binary has no --version flag)}"
+      if lesson_substrates "${BOX}" | grep -q '60-k8s'; then
+        got=$(box_ssh "${BOX}" "sudo rm -f /tmp/sbx-check.jsonl; \
+          sudo nohup tetragon --bpf-lib /usr/local/lib/tetragon/bpf --enable-process-ns --tracing-policy /etc/tetragon/sbx-sandboxing.yaml --export-filename /tmp/sbx-check.jsonl >/tmp/sbx-check.log 2>&1 & \
+          sleep 20; \
+          kubectl delete pod sbxchk-tetra --ignore-not-found --now >/dev/null 2>&1; \
+          kubectl run sbxchk-tetra --restart=Never --quiet --image=${AGENT_IMAGE} --image-pull-policy=IfNotPresent \
+            --command -- /bin/sh -c 'cat \$HOME/.ssh/id_rsa; true' >/dev/null 2>&1; \
+          for _ in \$(seq 1 90); do
+            case \"\$(kubectl get pod sbxchk-tetra -o jsonpath='{.status.phase}' 2>/dev/null)\" in
+              Succeeded | Failed) break ;;
+            esac
+            sleep 2
+          done
+          cid=\$(kubectl get pod sbxchk-tetra -o jsonpath='{.status.containerStatuses[0].containerID}' 2>/dev/null); \
+          sleep 5; sudo pkill -x tetragon >/dev/null 2>&1; sleep 2; \
+          kubectl delete pod sbxchk-tetra --ignore-not-found --now --wait=false >/dev/null 2>&1; \
+          sudo cat /tmp/sbx-check.jsonl 2>/dev/null | CID=\"\${cid}\" python3 -c \"
+import sys, json, os
+cid = os.environ.get('CID', '').split('://')[-1]
+hits = inctr = 0
+for line in sys.stdin:
+    try:
+        ev = json.loads(line)
+    except ValueError:
+        continue
+    kp = ev.get('process_kprobe')
+    if not isinstance(kp, dict):
+        continue
+    if 'sbx_probe=read_credentials' not in [*kp.get('tags', []), kp.get('message', '')]:
+        continue
+    hits += 1
+    docker = str((kp.get('process') or {}).get('docker') or '')
+    if cid and docker and cid.startswith(docker):
+        inctr += 1
+print('hits=%d inctr=%d' % (hits, inctr))
+\"" 2>/dev/null | tail -1)
+        echo "    tetragon probe (pod): ${got}   (policy /etc/tetragon/sbx-sandboxing.yaml)"
+        hits=$(echo "${got}" | sed -n 's/.*hits=\([0-9]*\).*/\1/p')
+        inctr=$(echo "${got}" | sed -n 's/.*inctr=\([0-9]*\).*/\1/p')
+        if [ "${hits:-0}" -gt 0 ] && [ "${inctr:-0}" -gt 0 ]; then
+          pass "Tetragon ${ver}: policy loads, and a kprobe fired inside a POD whose container id the cluster confirms — the host sensor sees through the pod, and its events can be attributed to one named workload"
+        else
+          fail "Tetragon ${ver}: ${got:-no output} — the sensor is not usable (hits=0: tetragon died, or the policy or a kprobe is dead; inctr=0: events arrive but carry no container id, so the per-POD mapping cannot tell the attack pod from the gateway beside it)"
+        fi
+        continue
+      fi
+      got=$(box_ssh "${BOX}" "sudo rm -f /tmp/sbx-check.jsonl; \
+        sudo nohup tetragon --bpf-lib /usr/local/lib/tetragon/bpf --enable-process-ns --tracing-policy /etc/tetragon/sbx-sandboxing.yaml --export-filename /tmp/sbx-check.jsonl >/tmp/sbx-check.log 2>&1 & \
+        sleep 20; mkdir -p /tmp/sbxc && printf x >/tmp/sbxc/.env; \
+        podman run --rm -v /tmp/sbxc:/c:ro ${ALPINE} cat /c/.env >/dev/null 2>&1; \
+        sleep 4; sudo pkill -x tetragon >/dev/null 2>&1; sleep 2; \
+        sudo cat /tmp/sbx-check.jsonl 2>/dev/null | python3 -c \"
+import sys, json
+hits = inctr = 0
+for line in sys.stdin:
+    try:
+        ev = json.loads(line)
+    except ValueError:
+        continue
+    kp = ev.get('process_kprobe')
+    if not isinstance(kp, dict):
+        continue
+    if 'sbx_probe=read_credentials' not in [*kp.get('tags', []), kp.get('message', '')]:
+        continue
+    hits += 1
+    ns = (kp.get('process', {}).get('ns') or {}).get('pid')
+    if isinstance(ns, dict) and not ns.get('is_host', False):
+        inctr += 1
+print('hits=%d inctr=%d' % (hits, inctr))
+\"" 2>/dev/null | tail -1)
+      echo "    tetragon probe: ${got}   (policy /etc/tetragon/sbx-sandboxing.yaml)"
+      hits=$(echo "${got}" | sed -n 's/.*hits=\([0-9]*\).*/\1/p')
+      inctr=$(echo "${got}" | sed -n 's/.*inctr=\([0-9]*\).*/\1/p')
+      if [ "${hits:-0}" -gt 0 ] && [ "${inctr:-0}" -gt 0 ]; then
+        pass "Tetragon ${ver}: policy loads, and a kprobe fired from inside a container's OWN pid namespace — the host sensor is watching, and its events can be attributed to the workload"
+      else
+        fail "Tetragon ${ver}: ${got:-no output} — the sensor is not usable (hits=0: the policy or a kprobe is dead, or this libc uses the syscall we did not hook; inctr=0: events arrive but carry no pid namespace, so the per-probe mapping cannot tell the workload from the box)"
+      fi
+      ;;
+
+    72-k8s-gvisor-trace)
+      # Two things, and the second is the one that matters. A pod under `gvisor-trace` must report
+      # gVisor's OWN kernel (so the class really selects runsc, not a silent runc fallback), AND the
+      # sentry's boot log must then contain the syscall that pod made. The second half is what makes
+      # this a SENSOR assertion rather than a boundary one: the RuntimeClass can be perfectly correct
+      # while `strace` is off, and 2.3.2 would report an empty trail — "gVisor hid everything" —
+      # about a sandbox that simply was not being traced.
+      got=$(box_ssh "${BOX}" "
+        sudo rm -f /var/log/runsc-trace/* 2>/dev/null
+        kubectl delete pod sbxchk-gvt --ignore-not-found --now >/dev/null 2>&1
+        kubectl run sbxchk-gvt --restart=Never --quiet --overrides='{\"spec\":{\"runtimeClassName\":\"gvisor-trace\"}}' \
+          --image=${AGENT_IMAGE} --image-pull-policy=IfNotPresent \
+          --command -- /bin/sh -c 'uname -r; cat \$HOME/.ssh/id_rsa; true' >/dev/null 2>&1
+        for _ in \$(seq 1 90); do
+          case \"\$(kubectl get pod sbxchk-gvt -o jsonpath='{.status.phase}' 2>/dev/null)\" in
+            Succeeded | Failed) break ;;
+          esac
+          sleep 2
+        done
+        kern=\$(kubectl logs sbxchk-gvt 2>/dev/null | head -1)
+        kubectl delete pod sbxchk-gvt --ignore-not-found --now --wait=false >/dev/null 2>&1
+        sleep 3
+        traced=\$(sudo bash -c 'grep -ahcE \" E open(at)?\\(\" /var/log/runsc-trace/*boot* 2>/dev/null | head -1' || echo 0)
+        echo \"kernel=\${kern:-none} traced=\${traced:-0}\"" 2>/dev/null | tail -1)
+      echo "    gvisor-trace probe: ${got}"
+      tkern=$(echo "${got}" | sed -n 's/.*kernel=\([^ ]*\).*/\1/p')
+      traced=$(echo "${got}" | sed -n 's/.*traced=\([0-9]*\).*/\1/p')
+      case "${tkern}" in
+        *gvisor*)
+          if [ "${traced:-0}" -gt 0 ]; then
+            pass "gVisor trace: the pod ran on gVisor's own kernel (${tkern}) AND the sentry wrote ${traced} of its syscalls to the boot log — the only sensor that can see inside this boundary is armed"
+          else
+            fail "gVisor trace: the class engaged (${tkern}) but the sentry's boot log holds NO syscalls — strace is off, so 2.3.2 would report an empty trail as if gVisor had hidden everything"
+          fi
+          ;;
+        "${NODE_KERNEL}") fail "gvisor-trace pod reports the NODE kernel (${tkern}) — the RuntimeClass was accepted and runc ran anyway, the silent fallback" ;;
+        *) fail "gvisor-trace pod: unexpected kernel '${tkern}' (traced=${traced:-0})" ;;
+      esac
+      ;;
+
+    k8s-api-audit)
+      # The CONTROL-PLANE sensor. Asserted from the LOG, never from the flag, and for a reason
+      # specific to this one: a policy file the apiserver cannot parse does NOT stop k3s. It logs the
+      # error and comes up with auditing OFF — after which every 2.3.x control-plane row reports "the
+      # control plane recorded nothing" about a cluster that was never recording. That is this repo's
+      # silent-fallback failure wearing the audit trail's clothes.
+      #
+      # The trigger is a SERVICE-ACCOUNT request, not a plain `kubectl get`. `system:serviceaccount:
+      # <ns>:<name>` is the exact field the per-attack mapping reads for `k8s_sa_token`, and admin
+      # traffic would exercise a different rule in the policy — proving the log works while leaving
+      # the one clause the lesson depends on untested.
+      got=$(box_ssh "${BOX}" "
+        tok=\$(kubectl create token default 2>/dev/null || echo)
+        [ -n \"\${tok}\" ] && curl -sk -o /dev/null -H \"Authorization: Bearer \${tok}\" https://127.0.0.1:6443/api
+        sleep 3
+        sudo grep -c 'system:serviceaccount:default:default' /var/lib/rancher/k3s/server/logs/audit.log 2>/dev/null || echo 0" 2>/dev/null | tail -1)
+      flags=$(box_ssh "${BOX}" "sudo grep -c 'audit-policy-file' /etc/rancher/k3s/config.yaml 2>/dev/null || echo 0" 2>/dev/null | tail -1)
+      echo "    k8s api audit: service-account events=${got:-0}, policy configured=${flags:-0}"
+      if [ "${got:-0}" -gt 0 ]; then
+        pass "k8s API audit: a service-account request was written to the audit log — the control-plane sensor is watching, and its events carry the pod's identity"
+      else
+        fail "k8s API audit: no service-account event reached /var/lib/rancher/k3s/server/logs/audit.log — the apiserver is not auditing (a policy it could not parse starts the cluster with audit OFF), so 2.3.x's control-plane column would be a false blank"
+      fi
+      ;;
+
+    85-kata-debug-kernel)
+      # 2.3.3's in-guest sensor needs a guest kernel carrying BTF, and the DEFAULT Kata guest kernel
+      # has none. Assert from INSIDE a POD booted with the annotation — and assert the DEFAULT guest
+      # too, because that contrast is the only proof the annotation did anything.
+      #
+      # The kernel STRING cannot be the test here: both kernels report 6.18.35, since the debug build
+      # carries the same version. A uname comparison would pass on a guest that never got the
+      # annotation, and 2.3.3 would then report "no BTF" as a property of Kata rather than of a
+      # substrate edit that missed. BTF presence is the discriminator.
+      dk=$(box_ssh "${BOX}" "cat /etc/kata-containers-debug-kernel 2>/dev/null" 2>/dev/null | tail -1)
+      if [ -z "${dk}" ]; then
+        fail "kata debug kernel: /etc/kata-containers-debug-kernel is absent — the substrate did not run"
+      else
+        # shellcheck disable=SC2016  # must expand inside the guest, not here
+        GUEST_BTF='echo $(uname -r) $(test -e /sys/kernel/btf/vmlinux && echo btf-present || echo btf-absent)'
+        plain=$(k8s_pod_output "${BOX}" sbxchk-kdk-default "kata-qemu" sh -c "'${GUEST_BTF}'")
+        annot=$(box_ssh "${BOX}" "
+          kubectl delete pod sbxchk-kdk-debug --ignore-not-found --now >/dev/null 2>&1
+          kubectl run sbxchk-kdk-debug --restart=Never --quiet \
+            --overrides='{\"spec\":{\"runtimeClassName\":\"kata-qemu\"},\"metadata\":{\"annotations\":{\"io.katacontainers.config.hypervisor.kernel\":\"${dk}\"}}}' \
+            --image=${AGENT_IMAGE} --image-pull-policy=IfNotPresent --command -- sh -c '${GUEST_BTF}' >/dev/null 2>&1
+          for _ in \$(seq 1 90); do
+            case \"\$(kubectl get pod sbxchk-kdk-debug -o jsonpath='{.status.phase}' 2>/dev/null)\" in
+              Succeeded | Failed) break ;;
+            esac
+            sleep 2
+          done
+          kubectl logs sbxchk-kdk-debug 2>/dev/null | tail -1
+          kubectl delete pod sbxchk-kdk-debug --ignore-not-found --now --wait=false >/dev/null 2>&1" 2>/dev/null | tail -1)
+        echo "    kata default guest: ${plain:-?}"
+        echo "    kata DEBUG guest  : ${annot:-?}   (${dk})"
+        if echo "${annot}" | grep -q 'btf-present'; then
+          pass "kata debug kernel: the annotation swapped the kernel — BTF is present in-guest, so 2.3.3's sidecar has something to attach against"
+        else
+          fail "kata debug kernel: '${annot:-no output}' — the annotation did not take effect. Under kata-deploy the qemu config is a SYMLINK and \`sed -i\` replaces it instead of editing the target, which leaves the shim reading an unedited file and parks the pod in ContainerCreating."
+        fi
+      fi
+      ;;
+
+    kata-debug-kernel)
+      # 2.2.3's in-guest sensor needs a guest kernel carrying CONFIG_AUDITSYSCALL + BTF. The DEFAULT
+      # Kata guest kernel has neither; the shipped debug kernel has both, selected per-run by the
+      # `kernel` annotation. Assert from INSIDE a guest booted with that annotation: the debug kernel
+      # string AND /sys/kernel/btf/vmlinux present. A default guest (no annotation) exposes neither, so
+      # "btf-present" here is proof the annotation actually swapped the kernel rather than being ignored.
+      dk=$(box_ssh "${BOX}" "cat /etc/kata-containers-debug-kernel 2>/dev/null" 2>/dev/null | tail -1)
+      got=$(box_ssh "${BOX}" "sudo nerdctl run --rm --net none --runtime io.containerd.kata.v2 --annotation io.katacontainers.config.hypervisor.kernel=${dk} ${ALPINE} sh -c 'echo \$(uname -r) \$(test -e /sys/kernel/btf/vmlinux && echo btf-present || echo btf-absent)'" 2>/dev/null | tail -1)
+      echo "    kata debug-kernel guest: ${got}   (debug kernel: ${dk})"
+      if echo "${got}" | grep -q 'btf-present'; then
+        pass "kata debug kernel: BTF present in-guest via annotation — an in-guest sensor can attach (2.2.3)"
+      else
+        fail "kata debug kernel: '${got}' — the annotation did not swap the kernel (no BTF in-guest); 2.2.3's in-guest sensor path is dead"
+      fi
+      ;;
+
+    auditd-guest)
+      # 2.2.4's host sensor, INSIDE the NAT guest. The substrate runs after 50-nat-vm/40-openshell, so
+      # box_ssh already lands in the guest (the 50-nat-vm arm above asserts the private-IP re-point);
+      # this checks the sensor there. Assert auditd is RUNNING and its keyed rules are loaded — the lesson
+      # needs a live, armed sensor to make its point (that even so, the rootless workload evades it); a
+      # dead auditd would make "auditd attributed none of the attacks" meaningless rather than a finding.
+      where=$(box_ssh "${BOX}" "hostname 2>/dev/null" 2>/dev/null | tail -1)
+      active=$(box_ssh "${BOX}" "systemctl is-active auditd 2>/dev/null || echo inactive" 2>/dev/null | tail -1)
+      rules=$(box_ssh "${BOX}" "sudo auditctl -l 2>/dev/null | grep -c sbx_" 2>/dev/null | tail -1)
+      # The two auditd.conf settings the lesson depends on MUST be live, not just on disk — a restart
+      # applies them (apt starts auditd on the defaults). Assert them so the rotation/format intermittency
+      # they fix cannot silently return: RAW format keeps the trail greppable, and a large max_log_file
+      # keeps a whole run in one segment instead of rotating the sensitive records out mid-run.
+      fmt=$(box_ssh "${BOX}" "sudo grep -i '^log_format' /etc/audit/auditd.conf | awk '{print \$3}'" 2>/dev/null | tail -1)
+      mlf=$(box_ssh "${BOX}" "sudo grep '^max_log_file ' /etc/audit/auditd.conf | awk '{print \$3}'" 2>/dev/null | tail -1)
+      echo "    auditd host: ${where}   log_format=${fmt}   max_log_file=${mlf}"
+      if [ "${active}" = "active" ] && [ "${rules:-0}" -gt 0 ] && [ "${fmt}" = "RAW" ] && [ "${mlf:-0}" -ge 500 ]; then
+        pass "auditd (guest): active, ${rules} rules, log_format=RAW, max_log_file=${mlf} — the trail is stable and greppable"
+      else
+        fail "auditd (guest): active='${active}' rules='${rules:-0}' log_format='${fmt}' max_log_file='${mlf}' — the sensor or its config is wrong, 2.2.4's trail would be a false blank or intermittent"
       fi
       ;;
   esac

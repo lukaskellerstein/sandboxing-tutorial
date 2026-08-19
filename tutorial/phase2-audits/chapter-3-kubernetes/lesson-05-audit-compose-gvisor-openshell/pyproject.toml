@@ -1,0 +1,13 @@
+[project]
+name = "lesson-05-audit-compose-gvisor-openshell"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.3.5: auditing OpenShell over gVisor, where the audit trail is the only witness that Landlock disappeared."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs inside the sandbox pod, and this leaf only orchestrates the
+# openshell CLI, kubectl and runsc's trace files, parsing their output with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

@@ -1,0 +1,276 @@
+{
+  "lesson": "2.2.4",
+  "mode": "network-on",
+  "boundary": "ordinary runc + OpenShell policy; in-guest auditd (local attacks) + OCSF trail (network attacks) (phase-2 audit of 1.2.4)",
+  "generated_at": "2026-08-18T17:44:07+02:00",
+  "complete": true,
+  "duration_s": 90.9,
+  "blocked": 15,
+  "scored": 19,
+  "logged": 15,
+  "recorded_counts": {
+    "LOGGED": 15,
+    "NOT_LOGGED": 1,
+    "NO_SENSOR": 3
+  },
+  "unseen_breaches": 0,
+  "unrecorded_breaches": 2,
+  "host": {
+    "engine": "openshell",
+    "node_kernel": "6.12.101+deb13-cloud-amd64",
+    "openshell_version": "openshell 0.0.106"
+  },
+  "measurements": {
+    "node_kernel": "6.12.101+deb13-cloud-amd64",
+    "engine": "openshell",
+    "openshell_version": "openshell 0.0.106",
+    "auditd_workload_syscalls": 4525,
+    "host_sensor_logged": 8,
+    "ocsf_logged": 8,
+    "listener_hits": [
+      "GET gateway/v1/models"
+    ]
+  },
+  "findings": [
+    {
+      "name": "read_credentials",
+      "attack": "1",
+      "why": "Can it read your secrets? Planted API keys and SSH keys in $HOME.",
+      "group": "reach",
+      "value": 5,
+      "detail": ".ssh/id_rsa,.aws/credentials,.config/gh/hosts.yml,.netrc,.env",
+      "verdict": "SUCCEEDED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "exfiltrate",
+      "attack": "2",
+      "why": "Can it send what it stole to an outside server?",
+      "group": "reach",
+      "value": "403",
+      "detail": "POST http://host.openshell.internal:18411/collect \u2014 HTTP 403 \u2014 refused before it landed",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "plant_backdoor",
+      "attack": "3",
+      "why": "Can it leave something behind that runs again later?",
+      "group": "reach",
+      "value": 3,
+      "detail": "~/.bashrc,~/.profile,~/.ssh/authorized_keys",
+      "verdict": "SUCCEEDED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "cloud_metadata",
+      "attack": "4",
+      "why": "Can it reach the cloud's credential service? (the classic SSRF)",
+      "group": "reach",
+      "value": "403",
+      "detail": "http://169.254.42.42/conf \u2014 HTTP 403 \u2014 refused before it landed",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "k8s_sa_token",
+      "attack": "",
+      "why": "Can it use the pod's ServiceAccount token against the control plane? (a cluster foothold)",
+      "group": "reach",
+      "value": "n/a-no-cluster",
+      "detail": "not running in a pod",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "home_items",
+      "attack": "-",
+      "why": "How many entries $HOME has \u2014 context, not a verdict.",
+      "group": "reach",
+      "value": 8,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "secretish_env",
+      "attack": "-",
+      "why": "Secret-looking environment variables \u2014 context, not a verdict.",
+      "group": "reach",
+      "value": 1,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "kernel_identity",
+      "attack": "8",
+      "why": "Is it talking to the REAL host kernel, or a sandbox's own?",
+      "group": "kernel",
+      "value": "6.12.101+deb13-cloud-amd64",
+      "detail": "the SAME kernel as the node",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "sys_module_count",
+      "attack": "8",
+      "why": "Can it enumerate the host's loaded kernel modules?",
+      "group": "kernel",
+      "value": 0,
+      "detail": "",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "kallsyms_readable",
+      "attack": "8",
+      "why": "Can it read kernel symbol addresses (exploit aid)?",
+      "group": "kernel",
+      "value": false,
+      "detail": "",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "bpf",
+      "attack": "8",
+      "why": "Can it call bpf() \u2014 a powerful, CVE-rich kernel interface?",
+      "group": "kernel",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "io_uring_setup",
+      "attack": "8",
+      "why": "Can it call io_uring_setup() \u2014 a large kernel attack surface?",
+      "group": "kernel",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "perf_event_open",
+      "attack": "8",
+      "why": "Can it call perf_event_open() \u2014 kernel profiling?",
+      "group": "kernel",
+      "value": "EPERM",
+      "detail": "refused \u2014 capability dropped",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "egress_gateway",
+      "attack": "P",
+      "why": "Is the ALLOWED destination still reachable? A policy must permit, not only deny.",
+      "group": "policy",
+      "value": "200",
+      "detail": "should ALLOW",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "egress_offpolicy",
+      "attack": "P",
+      "why": "Is an unlisted destination refused, one port from an allowed one?",
+      "group": "policy",
+      "value": "403",
+      "detail": "should DENY",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "http_method_denied",
+      "attack": "P",
+      "why": "Is POST refused to a host where GET is allowed? (needs layer 7)",
+      "group": "policy",
+      "value": "403",
+      "detail": "POST should DENY",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "binary_scoped",
+      "attack": "P",
+      "why": "Is the SAME binary refused from a path the policy does not name?",
+      "group": "policy",
+      "value": "403",
+      "detail": "unlisted binary",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "fs_policy_write",
+      "attack": "P",
+      "why": "Is a write outside the allowed paths refused?",
+      "group": "policy",
+      "value": "PermissionError",
+      "detail": "Landlock target",
+      "verdict": "BLOCKED",
+      "recorded": "NOT_LOGGED"
+    },
+    {
+      "name": "syscall_ms",
+      "attack": "-",
+      "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
+      "group": "cost",
+      "value": 87.5,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "cpu_ms",
+      "attack": "-",
+      "why": "CPU-bound work, in ms \u2014 for comparison.",
+      "group": "cost",
+      "value": 128.8,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "malicious_package",
+      "attack": "5",
+      "why": "Can a dependency run code just by being installed?",
+      "group": "abuse",
+      "value": "no-egress",
+      "detail": "setup.py code ran offline",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "reverse_shell",
+      "attack": "6",
+      "why": "Can it download a second payload and open a way in?",
+      "group": "abuse",
+      "value": "stage=403,egress=blocked,bind=ok",
+      "detail": "fetch + connect-out, never detonated",
+      "verdict": "BLOCKED",
+      "recorded": "LOGGED"
+    },
+    {
+      "name": "resource_exhaustion",
+      "attack": "7",
+      "why": "Can it take the machine down with a fork bomb?",
+      "group": "abuse",
+      "value": "no-cap:pids>=200,mem>=512MB",
+      "detail": "fork + memory, hard ceiling",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "audit_records",
+      "attack": "9",
+      "why": "Was any of it written down? A container blocks and forgets.",
+      "group": "evidence",
+      "value": 17,
+      "detail": "policy decisions recorded by OpenShell's OCSF trail",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    }
+  ]
+}

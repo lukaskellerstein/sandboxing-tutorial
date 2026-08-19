@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2.2.1 audit-container — audit</title>
+<style>
+:root { color-scheme: light dark;
+  --bg:#fff; --fg:#1a1a1a; --dim:#666; --line:#e3e3e3; --card:#fafafa;
+  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; --teal:#0f766e; }
+@media (prefers-color-scheme: dark) { :root {
+  --bg:#14161a; --fg:#e8e8ea; --dim:#9a9aa2; --line:#2a2d34; --card:#1b1e24;
+  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; --teal:#5eead4; } }
+:root[data-theme="dark"] {
+  --bg:#14161a; --fg:#e8e8ea; --dim:#9a9aa2; --line:#2a2d34; --card:#1b1e24;
+  --ok:#4ade80; --okbg:#12301f; --bad:#f87171; --badbg:#33191a; --accent:#a5b4fc; --teal:#5eead4; }
+:root[data-theme="light"] {
+  --bg:#fff; --fg:#1a1a1a; --dim:#666; --line:#e3e3e3; --card:#fafafa;
+  --ok:#0a7d3f; --okbg:#e8f5ee; --bad:#b3261e; --badbg:#fdeceb; --accent:#4338ca; --teal:#0f766e; }
+* { box-sizing:border-box; }
+body { margin:0; padding:2rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
+  font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.wrap { max-width:960px; margin:0 auto; }
+h1 { font-size:1.55rem; margin:0 0 .2rem; }
+h2 { font-size:.78rem; text-transform:uppercase; letter-spacing:.07em; color:var(--dim);
+     margin:1.8rem 0 .35rem; font-weight:600; }
+.sub { color:var(--dim); margin:0 0 1.2rem; font-size:.9rem; }
+.note { color:var(--dim); font-size:.86rem; }
+.score { font-size:1.5rem; font-weight:700; margin:.2rem 0 .1rem; }
+.score small { font-size:.85rem; font-weight:400; color:var(--dim); }
+.bar { display:block; width:100%; max-width:320px; height:8px; border-radius:5px;
+  background:var(--badbg); overflow:hidden; margin:.35rem 0 1rem; }
+.bar span { display:block; height:100%; background:var(--ok); }
+.legend { display:flex; gap:1.25rem; flex-wrap:wrap; font-size:.84rem; color:var(--dim); margin:.6rem 0 0; }
+table { border-collapse:collapse; width:100%; font-size:.88rem; }
+td { text-align:left; padding:.42rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+.num { color:var(--dim); width:1.4rem; font-size:.78rem; }
+.probe { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.83rem;
+  font-weight:600; white-space:nowrap; min-width:13rem; }
+.why { display:block; font-family:inherit; font-size:.78rem; font-weight:400; color:var(--dim);
+  white-space:normal; max-width:30rem; }
+.value { font-family:ui-monospace,monospace; font-size:.82rem; word-break:break-word; min-width:5.5rem; max-width:14rem; }
+.detail { color:var(--dim); font-size:.82rem; }
+.verdict { text-align:right; font-size:.72rem; letter-spacing:.05em; font-weight:700; white-space:nowrap; }
+tr.blocked .verdict { color:var(--ok); }
+tr.succeeded .verdict { color:var(--bad); }
+tr.info .verdict { color:var(--dim); font-weight:400; }
+tr.blocked td { background:var(--okbg); }
+tr.succeeded td { background:var(--badbg); }
+.meta { display:grid; grid-template-columns:auto 1fr; gap:.1rem .8rem; margin:.6rem 0 0;
+  font-size:.8rem; color:var(--dim); background:var(--card); border:1px solid var(--line);
+  border-radius:8px; padding:.7rem .9rem; }
+.meta dt { font-family:ui-monospace,monospace; }
+.meta dd { margin:0; }
+.warn { background:var(--badbg); border-left:3px solid var(--bad); padding:.6rem .8rem;
+  border-radius:0 6px 6px 0; font-size:.86rem; margin:.8rem 0; }
+a { color:var(--accent); }
+code { font-size:.85em; }
+table.recorded td { vertical-align:middle; }
+.rec-glyph { font-size:1rem; text-align:center; width:1.6rem; color:var(--dim); }
+.rec-label { font-size:.8rem; letter-spacing:.03em; color:var(--dim); white-space:nowrap; }
+.rec-glyph.rec-logged, .rec-glyph.rec-not-logged { color:var(--teal); }
+.rec-label.rec-logged { color:var(--teal); font-weight:600; }
+.rec-glyph.rec-no-sensor { color:var(--dim); }
+tr.rec-no-sensor td { background:var(--card); }
+.rec-badge { display:block; width:max-content; margin-top:.15rem; padding:.05rem .4rem; border-radius:4px;
+  border:1px solid var(--bad); color:var(--bad); font-size:.68rem; font-weight:700; letter-spacing:.04em;
+  text-transform:uppercase; }
+tr.rec-alarm td { background:var(--badbg); }
+.rec-label.rec-alarm { color:var(--bad); font-weight:700; }
+/* the audit page: two meters, the recorded one first */
+.meters { display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:1rem 2rem; align-items:start;
+  margin:.4rem 0 .2rem; }
+@media (max-width:640px) { .meters { grid-template-columns:1fr; } }
+.meter .score { margin:0 0 .1rem; }
+.meter.secondary .score { font-size:1.1rem; }
+.meter .bar { max-width:none; height:11px; margin:.35rem 0 .5rem; }
+.meter.secondary .bar { height:8px; }
+.pct { font-size:.85rem; font-weight:600; color:var(--dim); margin-left:.4rem; }
+.counts { font-size:.84rem; color:var(--dim); margin:0; }
+.counts .rec-glyph { width:auto; }
+/* the three segments echo the three glyphs: filled teal (●), hollow teal (○), flat grey (▬).
+   Selectors carry `.seg-bar` so they outrank the generic `.bar span` fill above. */
+.seg-bar { display:flex; background:var(--line); }
+.seg-bar .seg { display:block; height:100%; }
+.seg-bar .seg-logged { background:var(--teal); }
+.seg-bar .seg-not-logged { background:var(--bg); box-shadow:inset 0 0 0 2px var(--teal); border-radius:2px; }
+.seg-bar .seg-no-sensor { background:var(--dim); opacity:.5; }
+.callout { border-left:3px solid var(--dim); padding:.6rem .8rem; border-radius:0 6px 6px 0;
+  font-size:.88rem; margin:1rem 0 .4rem; background:var(--card); }
+.callout.alarm { border-color:var(--bad); background:var(--badbg); }
+.callout.ok { border-color:var(--teal); }
+table.grid { table-layout:fixed; margin-top:.4rem; }
+table.grid th { font-size:.74rem; text-transform:uppercase; letter-spacing:.05em; color:var(--dim);
+  padding:.42rem .6rem; border-bottom:1px solid var(--line); text-align:left; }
+table.grid th.verdict { text-align:left; width:6.5rem; font-size:.72rem; }
+table.grid th.blocked-h { color:var(--ok); }
+table.grid th.succeeded-h { color:var(--bad); }
+table.grid th .rec-glyph { width:auto; }
+table.grid td.q { padding:.6rem .8rem .7rem; vertical-align:top; }
+table.grid td.q .n { display:block; font-size:1.5rem; font-weight:700; line-height:1.1; }
+table.grid td.q .cap { display:block; font-size:.78rem; color:var(--dim); margin:.15rem 0 .35rem; }
+table.grid td.q .names { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.74rem; line-height:1.5; word-break:break-word; }
+table.grid td.blocked.q-rec { background:var(--okbg); }
+table.grid td.blocked.q-rec .n { color:var(--ok); }
+table.grid td.blocked.q-unrec { background:var(--card); }
+table.grid td.succeeded.q-rec .n { color:var(--bad); }
+table.grid td.succeeded.q-unrec { background:var(--badbg); }
+table.grid td.succeeded.q-unrec .n, table.grid td.succeeded.q-unrec .cap { color:var(--bad); }
+</style></head>
+<body><div class="wrap">
+
+<h1>2.2.1 audit-container</h1>
+<p class="sub">hardened rootless container + host Tetragon (phase-2 audit of 1.2.1)<br>
+Generated 2026-08-18 17:44 CEST. What each probe means, and why it matters:
+<a href="../../../../ATTACKS.md">ATTACKS.md</a>.<br>
+This page covers <strong>this lesson only</strong>. To compare rungs, build the overall report:
+<code>python3 infra/report/overall.py</code>.</p>
+
+
+<div class="meters">
+  <div class="meter primary">
+    <p class="score">7 <small>of 13 attacks recorded</small> <span class="pct">54%</span></p>
+    <span class="bar seg-bar" role="img" aria-label="13 attacks"><span class="seg seg-logged" style="width:53.85%" title="7 LOGGED"></span><span class="seg seg-not-logged" style="width:23.08%" title="3 NOT LOGGED"></span><span class="seg seg-no-sensor" style="width:23.08%" title="3 no sensor"></span></span>
+    <p class="counts"><span class="rec-glyph rec-logged">●</span> <strong>7</strong> logged &nbsp;·&nbsp; <span class="rec-glyph rec-not-logged">○</span> <strong>3</strong> not logged &nbsp;·&nbsp; <span class="rec-glyph rec-no-sensor">▬</span> <strong>3</strong> no sensor</p>
+  </div>
+  <div class="meter secondary">
+    <p class="score">7 <small>of 13 attacks blocked</small> <span class="pct">54%</span></p>
+    <span class="bar"><span style="width:54%"></span></span>
+    <p class="note">The containment reading — the same suite behind the same boundary as the phase-1
+    twin. It answers <em>did it hold</em>; the meter above answers <em>would you know</em>.</p>
+  </div>
+</div>
+<p class="callout alarm"><strong>2 attacks succeeded and left no record.</strong> <strong>2</strong> happened where no sensor could see: <code>kernel_identity, sys_module_count</code>.</p>
+<p class="note">Lesson run time: <strong>28s</strong>.</p>
+
+<div class="legend">
+  <span><strong style="color:var(--ok)">BLOCKED</strong> the boundary stopped the attack</span>
+  <span><strong style="color:var(--bad)">SUCCEEDED</strong> the attack got what it wanted</span>
+  <span><strong>INFO</strong> measured, not scored</span>
+  <span class="rec-legend"><span class="rec-glyph rec-logged">●</span> a record names it &nbsp; <span class="rec-glyph rec-not-logged">○</span> crossed a sensor, nothing written &nbsp; <span class="rec-glyph rec-no-sensor">▬</span> no sensor can see it</span>
+</div>
+<dl class="meta"><dt>node_kernel</dt><dd>6.8.0-106-generic</dd><dt>engine</dt><dd>podman</dd></dl>
+
+
+<h2>Containment × record — the two questions, crossed</h2>
+<p class="note">Rows are the verdict, columns are the record. Every scored attack sits in exactly one cell.</p>
+<table class="grid"><thead><tr><th></th>
+  <th><span class="rec-glyph rec-logged">●</span> recorded</th>
+  <th><span class="rec-glyph rec-not-logged">○</span>
+      <span class="rec-glyph rec-no-sensor">▬</span> not recorded</th></tr></thead>
+<tbody>
+<tr><th class="verdict blocked-h">BLOCKED</th>
+  <td class="q blocked q-rec"><span class="n">3</span><span class="cap">held, and you would know</span><span class="names">read_credentials, plant_backdoor, resource_exhaustion</span></td>
+  <td class="q blocked q-unrec"><span class="n">4</span><span class="cap">held silently — the attempt goes unnoticed</span><span class="names">kallsyms_readable, bpf, io_uring_setup, perf_event_open</span></td></tr>
+<tr><th class="verdict succeeded-h">SUCCEEDED</th>
+  <td class="q succeeded q-rec"><span class="n">4</span><span class="cap">got through, but the record shows it</span><span class="names">exfiltrate, cloud_metadata, malicious_package, reverse_shell</span></td>
+  <td class="q succeeded q-unrec"><span class="n">2</span><span class="cap">got through unwitnessed — the cell to act on</span><span class="names">kernel_identity, sys_module_count</span></td></tr>
+</tbody></table><h2>Reach — get to something valuable</h2><table><tbody><tr class="blocked"><td class="num">1</td><td class="probe">read_credentials<span class="why">Can it read your secrets? Planted API keys and SSH keys in $HOME.</span></td><td class="value">0</td><td class="detail"></td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr><tr class="succeeded"><td class="num">2</td><td class="probe">exfiltrate<span class="why">Can it send what it stole to an outside server?</span></td><td class="value">open</td><td class="detail">raw egress (no listener set)</td><td class="verdict">SUCCEEDED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr><tr class="blocked"><td class="num">3</td><td class="probe">plant_backdoor<span class="why">Can it leave something behind that runs again later?</span></td><td class="value">0</td><td class="detail"></td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr><tr class="succeeded"><td class="num">4</td><td class="probe">cloud_metadata<span class="why">Can it reach the cloud&#x27;s credential service? (the classic SSRF)</span></td><td class="value">200</td><td class="detail">http://169.254.42.42/conf — the target accepted it</td><td class="verdict">SUCCEEDED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr><tr class="info"><td class="num"></td><td class="probe">k8s_sa_token<span class="why">Can it use the pod&#x27;s ServiceAccount token against the control plane? (a cluster foothold)</span></td><td class="value">n/a-no-cluster</td><td class="detail">not running in a pod</td><td class="verdict">INFO</td><td class="rec-glyph"></td><td class="rec-label"></td></tr><tr class="info"><td class="num">-</td><td class="probe">home_items<span class="why">How many entries $HOME has — context, not a verdict.</span></td><td class="value">3</td><td class="detail"></td><td class="verdict">INFO</td><td class="rec-glyph"></td><td class="rec-label"></td></tr><tr class="info"><td class="num">-</td><td class="probe">secretish_env<span class="why">Secret-looking environment variables — context, not a verdict.</span></td><td class="value">1</td><td class="detail"></td><td class="verdict">INFO</td><td class="rec-glyph"></td><td class="rec-label"></td></tr></tbody></table><h2>Abuse — do damage with it</h2><table><tbody><tr class="succeeded"><td class="num">5</td><td class="probe">malicious_package<span class="why">Can a dependency run code just by being installed?</span></td><td class="value">index-reached</td><td class="detail">setup.py code ran offline</td><td class="verdict">SUCCEEDED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr><tr class="succeeded"><td class="num">6</td><td class="probe">reverse_shell<span class="why">Can it download a second payload and open a way in?</span></td><td class="value">stage=no-stage-url,egress=open,bind=ok</td><td class="detail">fetch + connect-out, never detonated</td><td class="verdict">SUCCEEDED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr><tr class="blocked"><td class="num">7</td><td class="probe">resource_exhaustion<span class="why">Can it take the machine down with a fork bomb?</span></td><td class="value">capped:pids,mem</td><td class="detail">fork + memory, hard ceiling</td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-logged">●</td><td class="rec-label rec-logged">LOGGED</td></tr></tbody></table><h2>Kernel — how much of the real kernel is exposed</h2><table><tbody><tr class="succeeded"><td class="num">8</td><td class="probe">kernel_identity<span class="why">Is it talking to the REAL host kernel, or a sandbox&#x27;s own?</span></td><td class="value">6.8.0-106-generic</td><td class="detail">the SAME kernel as the node</td><td class="verdict">SUCCEEDED</td><td class="rec-glyph rec-no-sensor">▬</td><td class="rec-label rec-no-sensor">no sensor</td></tr><tr class="succeeded"><td class="num">8</td><td class="probe">sys_module_count<span class="why">Can it enumerate the host&#x27;s loaded kernel modules?</span></td><td class="value">203</td><td class="detail"></td><td class="verdict">SUCCEEDED</td><td class="rec-glyph rec-no-sensor">▬</td><td class="rec-label rec-no-sensor">no sensor</td></tr><tr class="blocked"><td class="num">8</td><td class="probe">kallsyms_readable<span class="why">Can it read kernel symbol addresses (exploit aid)?</span></td><td class="value">False</td><td class="detail"></td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-no-sensor">▬</td><td class="rec-label rec-no-sensor">no sensor</td></tr><tr class="blocked"><td class="num">8</td><td class="probe">bpf<span class="why">Can it call bpf() — a powerful, CVE-rich kernel interface?</span></td><td class="value">EPERM</td><td class="detail">refused — capability dropped</td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-not-logged">○</td><td class="rec-label rec-not-logged">NOT LOGGED</td></tr><tr class="blocked"><td class="num">8</td><td class="probe">io_uring_setup<span class="why">Can it call io_uring_setup() — a large kernel attack surface?</span></td><td class="value">ENOSYS</td><td class="detail">not implemented — a user-space kernel</td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-not-logged">○</td><td class="rec-label rec-not-logged">NOT LOGGED</td></tr><tr class="blocked"><td class="num">8</td><td class="probe">perf_event_open<span class="why">Can it call perf_event_open() — kernel profiling?</span></td><td class="value">EPERM</td><td class="detail">refused — capability dropped</td><td class="verdict">BLOCKED</td><td class="rec-glyph rec-not-logged">○</td><td class="rec-label rec-not-logged">NOT LOGGED</td></tr></tbody></table><h2>Cost — what the boundary charges</h2><table><tbody><tr class="info"><td class="num">-</td><td class="probe">syscall_ms<span class="why">Syscall-bound work, in ms — the cost this boundary charges.</span></td><td class="value">49.6</td><td class="detail"></td><td class="verdict">INFO</td><td class="rec-glyph"></td><td class="rec-label"></td></tr><tr class="info"><td class="num">-</td><td class="probe">cpu_ms<span class="why">CPU-bound work, in ms — for comparison.</span></td><td class="value">123.4</td><td class="detail"></td><td class="verdict">INFO</td><td class="rec-glyph"></td><td class="rec-label"></td></tr></tbody></table>
+</div></body></html>

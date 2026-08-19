@@ -1,0 +1,70 @@
+# Lesson 9's policy — the whole lesson, in one file.
+#
+# Read it as a claim the run then tests. Everything not named here is DENIED, so the interesting part
+# is how narrow the one hole is: not "network on", but *this binary*, to *this host and port*, using
+# *these HTTP methods*.
+#
+# This is lesson 5's policy pointed at a cluster instead of a host, and the only line that had to
+# change is the endpoint. Lesson 5's sandbox reached its gateway through `host.openshell.internal`,
+# the podman driver's alias for the machine underneath. There is no such alias here: under the
+# kubernetes driver a sandbox is a Pod, so the gateway is an ordinary Service and the policy names
+# its cluster DNS name. That the rest of the file is unchanged is the point — the policy language
+# does not know or care which compute driver is underneath it.
+#
+# The endpoint host below is a placeholder that main.py substitutes at run time. A generated file
+# rather than a literal because the namespace is the lesson's to choose, and a hardcoded FQDN that
+# silently stops matching is exactly the kind of stale config that makes a policy look enforced when
+# it is not. (The token appears exactly once, in `host:` — keep it that way, or a search-and-replace
+# rewrites this paragraph into a sentence about a hostname.)
+#
+# Applied with:  openshell policy set <sandbox> --policy policy.yaml --wait
+# The --wait matters: the reload is what activates both the rules and the OCSF writer.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  # /etc is read-only, which is what attack 3's backdoor and the `fs_policy_write` probe hit. The
+  # probe writes to /etc/agent-probe-canary specifically because it is the path lesson 16 uses to
+  # show Landlock silently drop out under gVisor (there the write stays blocked by the read-only
+  # rootfs — the loss is masked, and only the audit trail shows it).
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # best_effort is the honest default and the trap at the same time. On a real kernel Landlock is
+  # enforced; on gVisor's user-space kernel the syscall answers ENOSYS and enforcement silently stops
+  # while the sandbox still reports healthy. `hard_requirement` is what makes that fail closed
+  # instead — lesson 16 runs both and shows the difference.
+  #
+  # This rung runs on ordinary runc, so Landlock is genuinely available and genuinely enforced. That
+  # is what makes lesson 9 the clean CONTROL for lesson 16's composition experiment: nothing is
+  # stacked underneath it yet.
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      # The gateway the agent legitimately needs. Note what is NOT here: every other address in the
+      # cluster and beyond, including the attacker's listener and any package index. A NetworkPolicy
+      # could express that much too (lesson 6 did). The next two lines are where it cannot follow.
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest # L7: OpenShell parses HTTP, so rules can name methods
+        enforcement: enforce # `audit` would record without blocking
+        access: read-only # GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE denied
+    binaries:
+      # Per-binary scoping. The `binary_scoped` probe copies THIS binary, byte for byte, to
+      # /tmp/agent-probe-unlisted-curl and makes the identical request — and is denied, because the
+      # policy names a path, not a program's behaviour. No kernel-level sandbox can see that
+      # difference, and lesson 6's NetworkPolicy allowed the copy without noticing.
+      - { path: /usr/bin/curl }

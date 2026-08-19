@@ -1,0 +1,13 @@
+[project]
+name = "lesson-03-audit-k8s-kata"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.3.3: auditing the Kata rung with an in-guest sidecar, after the host sensor goes blind."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs inside the pod, and this leaf only orchestrates kubectl, podman
+# (to build the sidecar image) and Tetragon, parsing their output with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

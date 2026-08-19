@@ -2,7 +2,7 @@
 # Install single-node OpenShift on the shared chapter-4 box. Runs on the WORKSTATION.
 #
 #   ./install.sh --preflight        every check that costs nothing. Run this FIRST.
-#   ./install.sh                    the whole thing, ending in a cluster lessons 10-13 can use
+#   ./install.sh                    the whole thing, ending in a cluster lessons 1.4.1–1.4.4 can use
 #   ./install.sh --from kexec       resume at a stage (the ids come from stages.json)
 #   ./install.sh --facts            just re-print the box's facts
 #   ./install.sh --status           cluster version + any degraded operators
@@ -128,7 +128,7 @@ preflight() {
     if [ -x "${HERE}/${t}" ]; then ok "${t} staged"; else bad "${t} missing — fetch it before ordering"; fi
   done
 
-  # Lesson 13's upstream deps, checked at the versions chapter 3 actually pinned.
+  # Lesson 1.4.4's upstream deps, checked at the versions chapter 3 actually pinned.
   code=$(curl -fsS -o /dev/null -w '%{http_code}' -L "https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.4/sandbox.yaml" 2>/dev/null || echo 000)
   if [ "${code}" = "200" ]; then ok "agent-sandbox v0.5.4"; else bad "agent-sandbox v0.5.4 -> ${code}"; fi
   if helm show chart oci://ghcr.io/nvidia/openshell/helm-chart --version 0.0.99 >/dev/null 2>&1; then
@@ -229,7 +229,7 @@ facts() {
   if grep -q "KVM=present" "${CFG}/facts.env"; then
     ok "/dev/kvm present — Kata can work here"
   else
-    die "/dev/kvm ABSENT — this box cannot run Kata, which is lesson 12's whole point"
+    die "/dev/kvm ABSENT — this box cannot run Kata, which is lesson 1.4.3's whole point"
   fi
 }
 
@@ -521,7 +521,7 @@ wait_api() {
   # list below so `--from api` still works against a pre-trim cluster.
   #
   # What IS required is what chapter 4 actually uses: a Ready node, and every operator that matters
-  # for OLM (lesson 12 installs an operator) and for scheduling.
+  # for OLM (lesson 1.4.3 installs an operator) and for scheduling.
   local kc need_ok
   kc=$(kubeconfig_local)
   last=""
@@ -590,9 +590,21 @@ kubeconfig_local() {
 # container even at mode 777, and the failure does not mention SELinux at all — OpenShell reports
 # `database error: (code: 14) unable to open database file` and CrashLoopBackOffs. `container_file_t`
 # is what makes the mount writable to a container.
+#
+# TWO THINGS HERE WERE WRONG UNTIL 2026-08-15, and together they gave the whole chapter THREE
+# sandboxes before it wedged:
+#
+#  1. `persistentVolumeReclaimPolicy: Delete` on a **hostPath** PV. There is no deleter plugin for
+#     hostPath, so every released volume goes to `Failed` and is never reusable — `oc get pv` shows
+#     `Failed` with the old claim still named. `Retain` is the only honest policy here; the volumes
+#     are freed by clearing `claimRef` (see `free_pvs`), which is what a StorageClass would automate.
+#  2. FOUR volumes, one of which the gateway itself takes permanently. Chapter 4 now has ten lessons
+#     (1.4.1-1.4.6 and the 2.4.x audit twins) and each OpenShell sandbox binds one, so the fourth
+#     sandbox of a session hung `Pending` with `unbound immediate PersistentVolumeClaims` — which
+#     reads like a broken gateway and cost an hour to trace back to storage.
 storage() {
   step "Pre-provisioning storage (SNO has no StorageClass)"
-  local n="${1:-4}"
+  local n="${1:-12}"
   local dirs=""
   for i in $(seq 0 $((n - 1))); do dirs="${dirs} /var/srv/pv${i}"; done
   # shellcheck disable=SC2086  # word splitting is the point: one mkdir for all the paths
@@ -607,11 +619,33 @@ metadata: { name: sbx-pv${i} }
 spec:
   capacity: { storage: 5Gi }
   accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Delete
+  persistentVolumeReclaimPolicy: Retain
   hostPath: { path: /var/srv/pv${i} }
 EOF
   done
+  free_pvs
   ok "${n} hostPath PVs available, SELinux-labelled container_file_t"
+}
+
+# Return every Released/Failed PV to Available by clearing its claimRef.
+#
+# With `Retain` a released volume keeps pointing at the PVC that used it and will not rebind, so
+# without this a session still runs out — just more slowly. This is the one piece of housekeeping a
+# real StorageClass would do for you, and running it is safe at any time: a Bound volume is untouched.
+free_pvs() {
+  local kc freed=0 name status
+  kc=$(kubeconfig_local)
+  while read -r name status; do
+    [ -z "${name}" ] && continue
+    case "${status}" in
+      Released | Failed)
+        KUBECONFIG="${kc}" "${HERE}/oc" patch pv "${name}" -p '{"spec":{"claimRef":null}}' >/dev/null 2>&1 || true
+        freed=$((freed + 1))
+        ;;
+    esac
+  done < <(KUBECONFIG="${kc}" "${HERE}/oc" get pv --no-headers 2>/dev/null | awk '/^sbx-pv/ {print $1, $5}')
+  [ "${freed}" -gt 0 ] && ok "freed ${freed} released PV(s) back to Available"
+  return 0
 }
 
 # `oc` against this cluster. The kubeconfig is resolved once per process rather than once per call —
@@ -628,7 +662,7 @@ OC() {
 # =============================================================================
 #
 # This used to be a manual step out of REPRODUCE.md §3.6, run by hand after the script said it was
-# finished. That is precisely the gap where "run it again and it works" stops being true: lesson 12
+# finished. That is precisely the gap where "run it again and it works" stops being true: lesson 1.4.3
 # hard-exits without a `kata` RuntimeClass, and its error message already promised this script
 # installs one. It does now.
 #
@@ -680,7 +714,29 @@ kata() {
   # manifest having been present.
   local up_before up_after
   up_before=$(node_ssh 'cut -d. -f1 /proc/uptime')
-  OC apply -f "${HERE}/manifests/kataconfig.yaml" >/dev/null
+  # RETRY, and CHECK. The sandboxed-containers operator reports its CSV `Succeeded` before its
+  # controller-manager has endpoints, so this apply can hit a validating webhook with nothing behind
+  # it: `failed calling webhook "vkataconfig.kb.io": no endpoints available for service
+  # "controller-manager-service"`. Measured 2026-08-15, and the controller was in CrashLoopBackOff at
+  # the time for a second reason — it starts inside the metrics-server rollout window and dies on
+  # `stale GroupVersion discovery: metrics.k8s.io/v1beta1`. Both clear on their own within a minute
+  # or two, so the fix is to wait rather than to fail.
+  #
+  # The apply was previously unchecked, so a failed KataConfig left install.sh exiting **0** with no
+  # Kata on the cluster — the worst kind of failure this repo has, a green light over a missing
+  # boundary. Now it retries and then dies loudly.
+  local applied=0
+  for _ in $(seq 1 20); do
+    if OC apply -f "${HERE}/manifests/kataconfig.yaml" >/dev/null 2>&1; then
+      applied=1
+      break
+    fi
+    sleep 15
+  done
+  [ "${applied}" -eq 1 ] || die "KataConfig could not be applied after 5 minutes.
+       The usual cause is the operator's webhook having no endpoints yet — check:
+         oc -n openshift-sandboxed-containers-operator get pods
+       and re-run:  ./install.sh --from kata"
   local inprog ready total rc
   last=""
   # 120 x 30s = 60 min, the documented upper bound
@@ -725,24 +781,24 @@ kata() {
 }
 
 # =============================================================================
-# openshell — the gateway lessons 13 drives
+# openshell — the gateway lesson 1.4.4 drives
 # =============================================================================
 #
 # Both blockers here were found on a live cluster and cost real time; neither is guessable from the
-# chart's docs. They are recorded in tutorial/chapter-4-openshift/lesson-13-openshift-openshell/README.md and handled:
+# chart's docs. They are recorded in tutorial/phase1-attacks/chapter-4-openshift/lesson-04-openshift-openshell/README.md and handled:
 # Point the LOCAL openshell CLI at the in-cluster gateway, over a localhost port-forward.
 #
 # localhost deliberately. A NodePort would be simpler and would outlive this script — and it would
 # also put an explicitly unauthenticated sandbox-creation API on a public IPv4 address.
 #
-# The CLI is the one in lesson 13's own venv, because it must be the version pinned against this
+# The CLI is the one in lesson 1.4.4's own venv, because it must be the version pinned against this
 # chart: 0.0.101 was already current on PyPI while this chart was 0.0.99, and the two are released
 # on separate cadences. `gateway add` is what seeds the gateway's config directory, so nothing else
 # may touch that config first.
 register_gateway() {
-  local osh="${HERE}/../../tutorial/chapter-4-openshift/lesson-13-openshift-openshell/.venv/bin/openshell"
+  local osh="${HERE}/../../tutorial/phase1-attacks/chapter-4-openshift/lesson-04-openshift-openshell/.venv/bin/openshell"
   if [ ! -x "${osh}" ]; then
-    ok "openshell CLI not installed yet — run 'uv sync' in tutorial/chapter-4-openshift/lesson-13-openshift-openshell,
+    ok "openshell CLI not installed yet — run 'uv sync' in tutorial/phase1-attacks/chapter-4-openshift/lesson-04-openshift-openshell,
        then './install.sh --from openshell' to register the gateway"
     return 0
   fi
@@ -751,7 +807,7 @@ register_gateway() {
     "${osh}" gateway add "http://127.0.0.1:18080" --name ocp >/dev/null 2>&1 || true
   OPENSHELL_DRIVERS=kubernetes OPENSHELL_GATEWAY=ocp \
     "${osh}" gateway select ocp >/dev/null 2>&1 || true
-  # Down again: lesson 13's run.sh starts its own forward and takes it down on exit, so nothing is
+  # Down again: lesson 1.4.4's run.sh starts its own forward and takes it down on exit, so nothing is
   # left listening between runs.
   "${HERE}/openshell-forward.sh" stop >/dev/null 2>&1 || true
   ok "gateway registered with the local CLI as 'ocp'"
@@ -788,9 +844,9 @@ openshell() {
 
   step "Installing the OpenShell gateway (chart 0.0.99, pinned — it is alpha)"
   OC get ns openshell >/dev/null 2>&1 || OC create ns openshell >/dev/null
-  # THIS LINE IS LESSON 13'S SUBJECT, not setup noise: a policy sandbox that itself needs privileges
+  # THIS LINE IS LESSON 1.4.4'S SUBJECT, not setup noise: a policy sandbox that itself needs privileges
   # has to satisfy admission control before it can enforce anything, which is the collision between
-  # this rung and lesson 11's SCC regime.
+  # this rung and lesson 1.4.2's SCC regime.
   OC adm policy add-scc-to-user privileged -z openshell-sandbox -n openshell >/dev/null
   ok "privileged SCC granted to serviceaccount openshell-sandbox in ns openshell"
 
@@ -830,11 +886,11 @@ openshell() {
 }
 
 # =============================================================================
-# verify — is this cluster actually fit for lessons 10-13?
+# verify — is this cluster actually fit for lessons 1.4.1–1.4.4?
 # =============================================================================
 #
 # Asserted FROM INSIDE, never from the flag we passed. A cluster that installed cleanly and cannot
-# run a Kata pod looks identical to a working one until lesson 12 fails an hour later, on a box that
+# run a Kata pod looks identical to a working one until lesson 1.4.3 fails an hour later, on a box that
 # bills the whole time. Every check here is one a lesson depends on.
 verify() {
   local fails=0
@@ -944,7 +1000,7 @@ verify() {
   fi
 
   if [ "${fails}" -eq 0 ]; then
-    step "Cluster is fit for lessons 10-13."
+    step "Cluster is fit for lessons 1.4.1–1.4.4."
   else
     die "${fails} verification check(s) FAILED — do not run lessons against this cluster.
        The box is still up. Investigate with ./install.sh --status, or destroy it with
@@ -1049,8 +1105,8 @@ main() {
   done
   cat <<EOF
 
-  Cluster is up and verified for lessons 10-13. Next:
-    cd ../../tutorial/chapter-4-openshift/lesson-10-openshift-pod && ./run.sh
+  Cluster is up and verified for lessons 1.4.1–1.4.4. Next:
+    cd ../../tutorial/phase1-attacks/chapter-4-openshift/lesson-01-openshift-pod && ./run.sh
     ./install.sh --status                 cluster version + any degraded operators
     ../down.sh ${CLUSTER}                 DESTROY IT — EUR $(hourly_price EM-B112X-SSD baremetal)/hr while it lives
 

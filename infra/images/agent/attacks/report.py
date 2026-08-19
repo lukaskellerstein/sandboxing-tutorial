@@ -40,6 +40,18 @@ FINDING_SENTINEL = "FINDING_JSON"
 #: lesson merges the audit-record count in after reading the runtime's logs (see the lesson main.py).
 GROUPS = ("reach", "abuse", "kernel", "policy", "evidence", "cost")
 
+#: The four RECORDED states — did a sensor write this attack down? Set HOST-SIDE by the lesson from
+#: the sensor logs (in-box code cannot see the trail kept about it), never by the in-container suite.
+#:
+#: * ``LOGGED``     — a record names this attack.
+#: * ``NOT_LOGGED`` — the attack crossed a sensor that *could* have recorded it and nothing was
+#:   written. The alarming state, and the whole reason phase 2 exists.
+#: * ``NO_SENSOR``  — nothing in this stack can observe this attack (a container blocks and forgets;
+#:   a Kata guest is opaque to a host sensor). This is the finding on every phase-1 rung.
+#: * ``NOT_RUN``    — the attack did not run on this rung, so there is nothing to have recorded.
+LOGGED, NOT_LOGGED, NO_SENSOR, NOT_RUN = "LOGGED", "NOT_LOGGED", "NO_SENSOR", "NOT_RUN"
+RECORDED_STATES = (LOGGED, NOT_LOGGED, NO_SENSOR, NOT_RUN)
+
 #: Groups the in-box program knows how to measure itself.
 IN_BOX_GROUPS = ("reach", "abuse", "kernel", "policy", "cost")
 
@@ -63,6 +75,9 @@ class Finding:
     contained: bool | None = None
     group: str = "reach"
     detail: str = ""
+    #: Was this attack written down? One of RECORDED_STATES, or None until a sensor is consulted.
+    #: Always None off the in-container suite — the lesson fills it in host-side (see the module note).
+    recorded: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -71,6 +86,7 @@ class Finding:
             "contained": self.contained,
             "group": self.group,
             "detail": self.detail,
+            "recorded": self.recorded,
         }
 
     def to_json(self) -> str:
@@ -106,6 +122,7 @@ class Scorecard:
         out: list[Finding] = []
         for f in data["findings"]:
             contained = f["contained"]
+            recorded = f.get("recorded")
             out.append(
                 Finding(
                     name=str(f["name"]),
@@ -113,6 +130,7 @@ class Scorecard:
                     contained=contained if isinstance(contained, bool) else None,
                     group=str(f["group"]),
                     detail=str(f.get("detail", "")),
+                    recorded=str(recorded) if recorded is not None else None,
                 )
             )
         return cls(out)

@@ -35,7 +35,7 @@ scw baremetal offer list zone=fr-par-1 -o json \
 # 4. credentials present (never print them)
 ls -l ~/.secrets/rh-pull-secret.json && scw account project list -o json | jq -r '.[].name'
 
-# 5. lesson 13's upstream deps — at the versions CHAPTER 3 pinned, not older ones
+# 5. lesson 1.4.4's upstream deps — at the versions CHAPTER 3 pinned, not older ones
 curl -fsS -o /dev/null -w 'agent-sandbox %{http_code}\n' -L \
   https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.5.4/sandbox.yaml
 helm show chart oci://ghcr.io/nvidia/openshell/helm-chart --version 0.0.99 >/dev/null && echo "openshell chart ok"
@@ -54,7 +54,7 @@ the preflight reports the drift as information rather than as a failure. That is
 check earning its keep on the second outing.
 
 Two version numbers in this file were also stale by then and are corrected above:
-lesson 13's deps were listed at agent-sandbox `v0.5.3` and openshell `0.0.42`, while
+lesson 1.4.4's deps were listed at agent-sandbox `v0.5.3` and openshell `0.0.42`, while
 chapter 3 shipped against `v0.5.4` and `0.0.99`. A preflight that checks the wrong
 versions is worse than none — it returns green for artifacts nothing will fetch.
 
@@ -308,7 +308,7 @@ pin moves. Re-derive rather than trust them.
 ## 9. Outcome of the 2026-08-05 run — **no cluster**
 
 Stated plainly so nobody reads this file as a success report: **the rebuild did
-not produce a working cluster, and lessons 10–13 were not verified against
+not produce a working cluster, and lessons 1.4.1–1.4.4 were not verified against
 anything live.**
 
 How far it got:
@@ -322,7 +322,7 @@ How far it got:
 | `install-to-disk` | ✅ wrote a complete RHCOS node… **to the wrong disk** (§5) |
 | Node boots into the cluster | ❌ came back up in **Ubuntu** |
 | MBR-wipe repair → BIOS fall-through | ❌ inconclusive — three short ping windows (boot, network up, reset) but never SSH or API |
-| Lessons 10, 11, 12, 13 | ❌ **not run** |
+| Lessons 1.4.1, 1.4.2, 1.4.3, 1.4.4 | ❌ **not run** |
 
 The box was deleted at `00:14:50Z`, ~1h26m after `billing_start` — **~€0.38**.
 

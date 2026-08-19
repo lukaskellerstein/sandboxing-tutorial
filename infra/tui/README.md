@@ -78,7 +78,7 @@ because both lists look like the same kind of thing. So when history is on scree
 to its names on one line:
 
 ```text
-lesson-05-container-openshell · up · succeeded · ended 33m ago
+1.2.4 · up · succeeded · ended 33m ago
  ✔ provision                     8s
  …
   8/8 done

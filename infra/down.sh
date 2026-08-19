@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Destroy a lesson's box. This is not housekeeping — it is what keeps this a EUR 1 tutorial.
 #
-#   ./down.sh lesson-03-container-gvisor
+#   ./down.sh 1.2.2
 #   ./down.sh --all
 #
 # It also destroys evidence, deliberately. Every one of these boxes has had a rogue-agent suite run
@@ -11,7 +11,7 @@
 # Isolation is now structural, not a keep-list. A single teardown terminates EXACTLY its own box by
 # id (lib.sh's box_destroy) and never touches another — there is no whole-set apply and no prefix
 # sweep that could reach a neighbour. Only `--all` sweeps the prefix, to catch anything untracked.
-# On 2026-08-10 a single `./down.sh lesson-01` destroyed lesson 2's live box because the old sweep
+# On 2026-08-10 a single `./down.sh 1.1.1` destroyed lesson 1.2.1's live box because the old sweep
 # terminated every sbx-* it saw; that class of bug cannot happen when a single down never sweeps.
 set -euo pipefail
 
