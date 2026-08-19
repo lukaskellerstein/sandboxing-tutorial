@@ -1,0 +1,64 @@
+# Lesson 16's policy — lesson 9's, unchanged, stacked on a different runtime.
+#
+# This is byte-for-byte lesson 9's policy: same read-only paths, same Landlock knob, same one-host
+# egress rule. Nothing here mentions gVisor, and that is the whole point of the experiment. Lesson 9
+# applied this policy to a sandbox on ordinary runc and every clause held. Lesson 16 applies the SAME
+# file to a sandbox whose `runtimeClassName` is `gvisor`, and watches which clauses survive the swap.
+#
+# The endpoint host below is a placeholder that main.py substitutes at run time — a generated file
+# rather than a literal because the namespace is the lesson's to choose, and a hardcoded FQDN that
+# silently stops matching is exactly the kind of stale config that makes a policy look enforced when
+# it is not. (The token appears exactly once, in `host:` — keep it that way.)
+#
+# Applied at sandbox CREATE. The static sections below cannot be hot-reloaded — see `openshell policy
+# set` in main.py, which reloads only the network side and arms the OCSF writer.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  # /etc is read-only, which is what the `fs_policy_write` probe hits: it writes /etc/agent-probe-canary
+  # and expects a refusal. On runc (lesson 9) that refusal is Landlock AND the read-only rootfs, both
+  # enforcing. Under gVisor Landlock drops out (see the `landlock` block) but the rootfs still refuses
+  # the write — so the loss is masked and only the audit trail shows it.
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # best_effort is the honest default and the trap at the same time. On a real kernel Landlock is
+  # enforced; on gVisor's user-space kernel the `landlock()` syscall answers ENOSYS and enforcement
+  # silently stops while the sandbox still reports healthy. This lesson runs exactly this policy on a
+  # gVisor sandbox and reads the HIGH "Landlock Filesystem Sandbox Unavailable" line the audit trail
+  # then carries — the filesystem clause has lost its Landlock backing. Measured on this box the
+  # `fs_policy_write` write stays BLOCKED anyway, because the read-only rootfs masks the loss; the
+  # audit finding is the only witness. (A path the rootfs did not cover would flip to ALLOWED.)
+  #
+  # `policy-hard.yaml` is this file with `hard_requirement` instead, which makes that loss loud: the
+  # sandbox refuses to start rather than run without a feature it declared it needs. Part 2 shows it.
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      # The gateway the agent legitimately needs. This clause is enforced by OpenShell's L7 proxy,
+      # which does not read the kernel — so unlike the filesystem clause above, it survives the gVisor
+      # swap intact. That contrast is the lesson: same file, one half kernel-dependent, one half not.
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest # L7: OpenShell parses HTTP, so rules can name methods
+        enforcement: enforce # `audit` would record without blocking
+        access: read-only # GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE denied
+    binaries:
+      # Per-binary scoping. The `binary_scoped` probe copies THIS binary, byte for byte, to
+      # /tmp/agent-probe-unlisted-curl and makes the identical request — and is denied, because the
+      # policy names a path, not a program's behaviour. Also L7, also unaffected by the runtime swap.
+      - { path: /usr/bin/curl }

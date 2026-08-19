@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Chapter 3, end to end: lessons 6-9, on the fewest boxes they fit on.
+# Chapter 3, end to end: lessons 1.3.1–1.3.4, on the fewest boxes they fit on.
 #
-#   ./chapter-03.sh            up -> lessons 6,7,8,9 -> destroy every box it used
+#   ./chapter-03.sh            up -> lessons 1.3.1,1.3.2,1.3.3,1.3.4 -> destroy every box it used
 #   ./chapter-03.sh --keep     leave them up afterwards (you pay until ./down.sh)
 #
 # It lives in infra/ beside up.sh / run.sh / down.sh because that is all it is: those three verbs in
 # the right order over a set of lessons. The lessons themselves live under
-# tutorial/chapter-3-kubernetes/ — one folder per chapter, the same grouping syllabus.md, the
+# tutorial/phase1-attacks/chapter-3-kubernetes/ — one folder per chapter, the same grouping syllabus.md, the
 # shared boxes in lessons.json and these chapter runners already use.
 #
 # The reason it exists is arithmetic. All four lessons share `chapter-03-k8s` — one node carrying
 # five substrates that take ~30 minutes to build; running the lessons separately pays that four
-# times. Here it is paid once. (Lesson 9 used to own a separate box because its resident gateway
+# times. Here it is paid once. (Lesson 1.3.4 used to own a separate box because its resident gateway
 # did not fit beside Kata's guest boots on 8 GB; the identity-verified quota bought the PRO2-S that
 # holds all four — lessons.json records the measurement.)
 #
-# It is also the honest way to see the chapter's claim. Lessons 6, 7 and 8 run against the SAME node
-# in the same hour with gVisor and Kata both installed — so when lesson 7 asks for
+# It is also the honest way to see the chapter's claim. Lessons 1.3.1, 1.3.2 and 1.3.3 run against the SAME node
+# in the same hour with gVisor and Kata both installed — so when lesson 1.3.2 asks for
 # `runtimeClassName: gvisor` it is choosing from a menu rather than naming the only thing present,
 # and the scorecards are comparable without report/overall.py warning that they came from different
 # hardware.
@@ -28,13 +28,15 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFRA="${HERE}"
+# shellcheck source-path=SCRIPTDIR source=lib.sh
+source "${HERE}/lib.sh" # for lesson_box — one implementation of the lesson->box rule, not a copy
 SHARED=chapter-03-k8s
 
 LESSONS=(
-  lesson-06-k8s
-  lesson-07-k8s-gvisor
-  lesson-08-k8s-kata
-  lesson-09-k8s-openshell
+  1.3.1
+  1.3.2
+  1.3.3
+  1.3.4
 )
 
 KEEP=0
@@ -47,7 +49,7 @@ KEEP=0
 boxes() {
   local l
   for l in "${LESSONS[@]}"; do
-    jq -r --arg l "${l}" '.[$l].box // $l' "${INFRA}/lessons.json"
+    lesson_box "${l}"
   done | sort -u
 }
 
@@ -74,7 +76,7 @@ trap teardown EXIT
 "${INFRA}/up.sh" "${SHARED}"
 
 echo
-echo "==> the runtime menu lessons 6-8 choose from, on ONE node:"
+echo "==> the runtime menu lessons 1.3.1–1.3.3 choose from, on ONE node:"
 "${INFRA}/ssh.sh" "${SHARED}" 'kubectl get runtimeclass' || true
 
 FAILED=()
@@ -91,7 +93,7 @@ for lesson in "${LESSONS[@]}"; do
   #
   # A failing lesson does NOT abort the chapter: the remaining rungs are still worth measuring, and
   # the boxes are already paid for. Collect and report at the end instead.
-  if ! "${INFRA}/up.sh" "$(jq -r --arg l "${lesson}" '.[$l].box // $l' "${INFRA}/lessons.json")" \
+  if ! "${INFRA}/up.sh" "$(lesson_box "${lesson}")" \
     || ! "${INFRA}/run.sh" "${lesson}"; then
     echo "!! ${lesson} FAILED — continuing with the rest of the chapter"
     FAILED+=("${lesson}")

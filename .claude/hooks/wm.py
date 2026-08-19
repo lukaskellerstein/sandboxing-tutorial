@@ -16,6 +16,34 @@ addition. When the SA is not loaded, yabai still exits 0 and silently does
 nothing -- so `park()` re-queries and reports which windows did not land. The
 caller stashes those with `stash()` (float + refocus) instead, which keeps the
 window compositing and therefore keeps Playwright screencasts working.
+
+The user must never be carried along to the scratch workspace. Sending a window
+to another space does not follow it, but *focusing* one does -- so the only
+dangerous step is restoring focus, and `restore_focus()` will not name a target
+until it has re-queried it and found it on a space that is already visible.
+
+A space is scratch only while it holds nothing but Playwright browsers. The
+label is invisible (sketchybar draws app icons, not labels), the space is an
+ordinary desktop, and once the browser is closed it looks empty -- so sooner or
+later the user opens a terminal there and it becomes *their* workspace. If the
+hook kept treating it as scratch, every browser on the machine would be parked
+into that workspace, a browser opened *from* it would never move at all, and
+`focus_token()` would refuse the space as "home" and walk the user off their own
+desktop on every navigation. Measured 2026-08-18: space 12 labelled `playwright`,
+two Ghostty windows on it, exactly those symptoms. So `_remembered_index()`
+re-checks the space for foreign windows on every run and abandons it -- label
+cleared, state forgotten -- the moment one appears; a new scratch is created and
+the browsers already there move along.
+
+Ownership has two grains. `is_playwright_browser()` says "spawned by *some*
+Playwright" and is enough for parking, which is harmless across sessions.
+Closing is not: several Claude Code sessions run at once on this machine, each
+with its own MCP server, and a SessionEnd that closed every Playwright browser
+took the other sessions' browsers with it (measured 2026-08-18). The cleanup
+hook therefore closes only what `is_owned_by(pid, session_pid())` proves
+descends from *this* session's Claude process, plus true orphans -- browsers
+whose MCP server has already exited and left them to launchd -- which no live
+session can be using.
 """
 
 import contextlib
@@ -31,6 +59,10 @@ from typing import Any
 
 STATE_DIR = Path(tempfile.gettempdir()) / "playwright-hooks"
 SCRATCH_STATE = STATE_DIR / "scratch-space.json"
+# The last space the user was seen on that was not the scratch space. Needed
+# because a hook can fire when they have already been dragged onto scratch, at
+# which point the space underfoot is not an answer to "where were they?".
+HOME_STATE = STATE_DIR / "home-space.json"
 
 # Window classes (i3) / application names (yabai), compared lowercased. Both
 # spellings of each browser are listed because the two window managers report
@@ -176,6 +208,98 @@ def is_playwright_browser(pid: int | None) -> bool:
 
     ancestors = _ancestors_darwin(pid) if platform.system() == "Darwin" else _ancestors_linux(pid)
     return any(indicator in name for name in ancestors for indicator in PLAYWRIGHT_ANCESTORS)
+
+
+def _parent_of(pid: int) -> int | None:
+    """ppid of `pid`, or None when the process is gone. Works on both platforms."""
+    if platform.system() == "Darwin":
+        entry = _process_table().get(pid)
+        return entry[0] if entry else None
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        fields = stat[stat.rfind(")") + 1 :].split()
+        return int(fields[1]) if len(fields) > 1 else None
+    except Exception:
+        return None
+
+
+def _ancestor_pids(pid: int) -> list[int]:
+    """The pid chain above `pid`, nearest first, stopping short of init/launchd."""
+    chain: list[int] = []
+    seen: set[int] = set()
+    parent = _parent_of(pid)
+    while parent and parent > 1 and parent not in seen:
+        seen.add(parent)
+        chain.append(parent)
+        parent = _parent_of(parent)
+    return chain
+
+
+# Interpreters and shells a hook runs through on its way up to Claude Code:
+# `python3 hook.py` under `sh -c`, or under a login shell. Anything else on the
+# way up is the Claude Code process itself, whatever binary it happens to be.
+_HOOK_WRAPPERS = ("python", "sh", "bash", "zsh", "dash", "env")
+
+
+def session_pid() -> int | None:
+    """The Claude Code process this hook runs under.
+
+    Hooks are children of the Claude Code process (through `sh -c`), and so is
+    the MCP server that launched the browser -- which makes that pid the one
+    thing a browser of *this* session has in its ancestry that a browser of any
+    other session does not. Found by walking up from the hook and skipping the
+    shells and interpreters in between; identified by position, not by name, so
+    it holds whether Claude Code is a native binary or `node cli.js`.
+    """
+    for pid in _ancestor_pids(os.getpid()):
+        # A login shell reports itself as "-zsh"; strip the marker before matching.
+        name = _process_name(pid).lstrip("-")
+        if not name.startswith(_HOOK_WRAPPERS):
+            return pid
+    return None
+
+
+def _process_name(pid: int) -> str:
+    if platform.system() == "Darwin":
+        entry = _process_table().get(pid)
+        return entry[1] if entry else ""
+    try:
+        return Path(f"/proc/{pid}/comm").read_text().strip().lower()
+    except Exception:
+        return ""
+
+
+def is_owned_by(pid: int | None, session: int | None) -> bool:
+    """True when the browser at `pid` descends from the Claude process `session`."""
+    if not pid or not session:
+        return False
+    return session in _ancestor_pids(pid)
+
+
+def is_orphan_browser(pid: int | None) -> bool:
+    """A Playwright browser whose MCP server is gone: reparented to init/launchd.
+
+    Its command line still carries the Playwright markers (that is why they are
+    checked, not the ancestry), but nothing alive can be driving it any more.
+    Safe for any session to close; a browser with a live parent is left to the
+    session that owns it.
+    """
+    if not pid:
+        return False
+    return _parent_of(pid) == 1 and any(
+        marker in _command_line(pid) for marker in PLAYWRIGHT_COMMAND_MARKERS
+    )
+
+
+def _is_real_window(window: dict) -> bool:
+    """A window a person could be working in.
+
+    Same test sketchybar's `space.sh` and yabai's `space_focus.sh` use: only
+    `AXStandardWindow` (tray and background windows have an empty subrole), and
+    not sticky -- a sticky float such as a dictation status dialog lives on
+    every space and would make every space look occupied.
+    """
+    return window.get("subrole") == "AXStandardWindow" and not window.get("is-sticky")
 
 
 # --------------------------------------------------------------------------
@@ -329,16 +453,123 @@ class Yabai(WindowManager):
     def _spaces() -> list[dict]:
         return run_json(["yabai", "-m", "query", "--spaces"]) or []
 
-    def focus_token(self) -> int | None:
+    def focus_token(self) -> dict:
+        """Record where the user is standing, before anything gets moved.
+
+        The space is remembered by uuid rather than index: `space --create`
+        renumbers everything after the new space, so an index captured here can
+        name a different desktop by the time focus is restored.
+        """
         window = run_json(["yabai", "-m", "query", "--windows", "--window"])
-        return window.get("id") if isinstance(window, dict) else None
+        space = run_json(["yabai", "-m", "query", "--spaces", "--space"])
+        token = {
+            "window": window.get("id") if isinstance(window, dict) else None,
+            "space": space.get("uuid") if isinstance(space, dict) else None,
+        }
+
+        # A hook can fire while the desktop is *already* on the scratch space:
+        # Playwright calls bringToFront() on its own page, which raises the
+        # parked window and macOS follows it there. Neither the space nor the
+        # focused window is worth remembering in that state -- one is the place
+        # we are trying to get the user out of, the other is the browser that
+        # took them there. Fall back to the last space that was not scratch.
+        #
+        # "Scratch" here is the *validated* notion from `_remembered_index()`,
+        # not the raw uuid in the state file: a space the user has since moved
+        # into is their workspace, and treating it as scratch is what sent them
+        # off their own desktop on every navigation (see the module docstring).
+        scratch = self._remembered_index()
+        on_scratch = (
+            isinstance(space, dict) and scratch is not None and space.get("index") == scratch
+        )
+        if token["space"] and on_scratch:
+            token["window"] = None
+            token["space"] = self._read_home()
+        elif token["space"]:
+            self._write_home(token["space"])
+
+        return token
 
     def restore_focus(self, token: Any) -> None:
-        if token:
-            run(["yabai", "-m", "window", str(token), "--focus"])
+        """Hand focus back without ever making the scratch space visible.
+
+        This is the only step in the whole hook that can move the user between
+        desktops. `window --focus` follows the window across spaces, so naming
+        a window that was just parked drags the desktop onto the scratch space
+        -- the one thing these hooks exist to prevent. A target is therefore
+        used only after being re-queried and found on an already-visible space.
+        """
+        if not isinstance(token, dict):
+            return
+
+        spaces = self._spaces()
+        visible = {s.get("index") for s in spaces if s.get("is-visible")}
+        home = next((s for s in spaces if s.get("uuid") == token.get("space")), None)
+
+        target = token.get("window")
+        if target is not None:
+            window = run_json(["yabai", "-m", "query", "--windows", "--window", str(target)])
+            if not (isinstance(window, dict) and window.get("space") in visible):
+                target = None  # parked, closed, or on a desktop we are not on
+
+        # Whatever had focus is now out of view, so hand it to something else on
+        # the user's own space -- otherwise keystrokes land wherever macOS
+        # happened to drop focus when the window left. The something is the
+        # window that had focus *before* the browser stole it: yabai lists a
+        # space's windows front to back (`space_focus.sh` in this machine's
+        # yabai config rests on the same fact), so with the browser gone the
+        # front-most real window is the one the user was typing in. `first-window`
+        # is the last resort, and is 0 on an empty space, which the truthiness
+        # check below treats as "nothing".
+        if target is None and home is not None and home.get("index") in visible:
+            target = self._front_window(home.get("index")) or home.get("first-window")
+
+        if target:
+            run(["yabai", "-m", "window", str(target), "--focus"])
+
+        # Safety net: nothing above is supposed to change which space is
+        # visible, but if something did, walk the user back. Re-resolved by
+        # uuid because an index read before the move may have shifted since.
+        # Only when the *scratch* space is what became visible, though: that is
+        # the one place a browser can carry the user to (a raised window drags
+        # the desktop to its own space and nowhere else). If they are on any
+        # other space, they switched there themselves while the hook was
+        # running, and walking them back would fight their own keystroke.
+        if token.get("space"):
+            spaces_now = self._spaces()
+            home_now = next((s for s in spaces_now if s.get("uuid") == token["space"]), None)
+            scratch_now = self._remembered_index()
+            scratch_visible = any(
+                s.get("index") == scratch_now and s.get("is-visible") for s in spaces_now
+            )
+            if home_now is not None and not home_now.get("is-visible") and scratch_visible:
+                run(["yabai", "-m", "space", str(home_now.get("index")), "--focus"])
+
+    @staticmethod
+    def _read_home() -> str | None:
+        try:
+            return json.loads(HOME_STATE.read_text()).get("uuid")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _write_home(uuid: str) -> None:
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            HOME_STATE.write_text(json.dumps({"uuid": uuid}))
+        except Exception:
+            pass
 
     def _remembered_index(self) -> int | None:
-        """Resolve the previously recorded scratch space to a current index."""
+        """Resolve the previously recorded scratch space to a current index.
+
+        Resolving includes checking that it still *is* scratch. A space the
+        user has moved into -- any real window on it that is not a Playwright
+        browser -- is given back: our label comes off so nothing adopts it
+        again, the state is forgotten, and the answer is "no scratch", which
+        makes `scratch()` create a fresh one and `is_scratch()` treat the
+        browsers still sitting there as candidates to move along.
+        """
         if self._resolved:
             return self._index
 
@@ -347,9 +578,42 @@ class Yabai(WindowManager):
         if state:
             for space in self._spaces():
                 if space.get("uuid") == state.get("uuid"):
-                    self._index = space.get("index")
+                    if self._foreign_windows(space.get("index")):
+                        self._abandon(space)
+                    else:
+                        self._index = space.get("index")
                     break
         return self._index
+
+    def _foreign_windows(self, index: int | None) -> list[dict]:
+        """Real windows on the space that are not Playwright browsers."""
+        if index is None:
+            return []
+        windows = run_json(["yabai", "-m", "query", "--windows", "--space", str(index)]) or []
+        return [
+            w
+            for w in windows
+            if _is_real_window(w)
+            and not (
+                (w.get("app") or "").lower() in BROWSER_APPS and is_playwright_browser(w.get("pid"))
+            )
+        ]
+
+    def _abandon(self, space: dict) -> None:
+        """The user lives here now. Take our label off it and forget it."""
+        if (space.get("label") or "") == YABAI_SCRATCH_LABEL:
+            run(["yabai", "-m", "space", str(space.get("index")), "--label", ""])
+        SCRATCH_STATE.unlink(missing_ok=True)
+        self._index = None
+
+    def _front_window(self, index: int | None) -> int | None:
+        """The front-most real window on a space that is not a Playwright browser."""
+        if index is None:
+            return None
+        for w in self._foreign_windows(index):
+            if not w.get("is-minimized") and not w.get("is-hidden"):
+                return w.get("id")
+        return None
 
     def scratch(self) -> int | None:
         """Index of the scratch space -- remembered, adopted, or freshly created."""
@@ -359,7 +623,11 @@ class Yabai(WindowManager):
 
         spaces = self._spaces()
         for space in spaces:
-            if (space.get("label") or "") in YABAI_ADOPTABLE_LABELS:
+            # Adopt a labelled space only while it is actually free -- one the
+            # user has moved into fails the same test the remembered one does.
+            if (space.get("label") or "") in YABAI_ADOPTABLE_LABELS and not self._foreign_windows(
+                space.get("index")
+            ):
                 self._adopt(space, created=False)
                 return self._index
 
@@ -423,6 +691,7 @@ class Yabai(WindowManager):
     def release_scratch(self) -> None:
         state = self._read_state()
         SCRATCH_STATE.unlink(missing_ok=True)
+        HOME_STATE.unlink(missing_ok=True)
         if not state or not state.get("created"):
             return
         for space in self._spaces():

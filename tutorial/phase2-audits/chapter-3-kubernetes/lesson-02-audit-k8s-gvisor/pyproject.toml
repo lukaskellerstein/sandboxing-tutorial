@@ -1,0 +1,13 @@
+[project]
+name = "lesson-02-audit-k8s-gvisor"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.3.2: auditing the gVisor rung with the sentry's own trace, and measuring the host sensor beside it."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs inside the pod, and this leaf only orchestrates kubectl, runsc's
+# trace files and Tetragon, parsing their output with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

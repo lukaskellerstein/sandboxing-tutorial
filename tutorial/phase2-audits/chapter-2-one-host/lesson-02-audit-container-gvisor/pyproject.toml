@@ -1,0 +1,10 @@
+[project]
+name = "lesson-02-audit-container-gvisor"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.2.2: auditing the gVisor rung via the sentry's own strace."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.ruff]
+extend = "../../../../ruff.toml"
+src = ["."]

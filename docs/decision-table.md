@@ -54,13 +54,13 @@ flowchart TB
 
 | You pick | You get | You pay | Measured in |
 | :-- | :-- | :-- | :-- |
-| **container** | process + filesystem isolation, resource caps | host kernel fully exposed; no HTTP/audit | lessons 2, 6 |
-| **gVisor** | tiny host-kernel attack surface | some syscalls simply do not exist; **no Landlock** | lessons 3, 7 |
-| **Kata** | a real, separate kernel; keeps Landlock | a VM per pod — boot time and memory | lessons 4, 8, 12 |
-| **OpenShell** | *which binary*, *which method*, an audit trail | host kernel fully exposed; alpha software, pin it | lessons 5, 9, 13 |
-| **OpenShift SCC** | the cluster refuses an over-privileged pod | you must design to the policy, not around it | lesson 11 |
+| **container** | process + filesystem isolation, resource caps | host kernel fully exposed; no HTTP/audit | lessons 1.2.1, 1.3.1 |
+| **gVisor** | tiny host-kernel attack surface | some syscalls simply do not exist; **no Landlock** | lessons 1.2.2, 1.3.2 |
+| **Kata** | a real, separate kernel; keeps Landlock | a VM per pod — boot time and memory | lessons 1.2.3, 1.3.3, 1.4.3 |
+| **OpenShell** | *which binary*, *which method*, an audit trail | host kernel fully exposed; alpha software, pin it | lessons 1.2.4, 1.3.4, 1.4.4 |
+| **OpenShift SCC** | the cluster refuses an over-privileged pod | you must design to the policy, not around it | lesson 1.4.2 |
 
-The cost that surprises people is **not** the VM: lesson 8 measured Kata's per-pod
+The cost that surprises people is **not** the VM: lesson 1.3.3 measured Kata's per-pod
 VM boot and found scheduling swamped it. The real cost of Kata is operational (a
 VM per pod to run and size), and the real cost of OpenShell is that it is **alpha**
 — every lesson that uses it pins the version and records it, because unpinned alpha
@@ -74,15 +74,15 @@ them:
 
 | Composition | Lesson | Result | Why |
 | :-- | :-- | :-- | :-- |
-| OpenShell **over gVisor** | [16](../tutorial/chapter-3-kubernetes/lesson-16-compose-gvisor-openshell/) (k3s) | Landlock **silently lost** — audit-trail-only | gVisor answers `ENOSYS` to `landlock()` |
-| OpenShell **over Kata** | [17](../tutorial/chapter-3-kubernetes/lesson-17-compose-kata-openshell/) (k3s) | fully enforced | the guest kernel ships Landlock |
-| OpenShell **over Kata** | [19](../tutorial/chapter-4-openshift/lesson-19-compose-kata-openshell/) (OpenShift) | fully enforced, through SCC admission | the operator's Kata guest ships Landlock; the enterprise path |
+| OpenShell **over gVisor** | [1.3.5](../tutorial/phase1-attacks/chapter-3-kubernetes/lesson-05-compose-gvisor-openshell/) (k3s) | Landlock **silently lost** — audit-trail-only | gVisor answers `ENOSYS` to `landlock()` |
+| OpenShell **over Kata** | [1.3.6](../tutorial/phase1-attacks/chapter-3-kubernetes/lesson-06-compose-kata-openshell/) (k3s) | fully enforced | the guest kernel ships Landlock |
+| OpenShell **over Kata** | [1.4.6](../tutorial/phase1-attacks/chapter-4-openshift/lesson-06-compose-kata-openshell/) (OpenShift) | fully enforced, through SCC admission | the operator's Kata guest ships Landlock; the enterprise path |
 
 > [!danger]
 > **The rule:** *composition fails when the lower layer removes a kernel feature
 > the upper layer depends on* — and it can fail **invisibly**.
 >
-> Measured on OpenShell 0.0.99, the gVisor case (lesson 16) is subtler than the
+> Measured on OpenShell 0.0.99, the gVisor case (lesson 1.3.5) is subtler than the
 > folklore. Landlock does drop out, but OpenShell's kubernetes driver *also* backs
 > the read-only paths with a **read-only root filesystem**, so `fs_policy_write`
 > stays blocked and the scored result is **identical** to the safe Kata stack. The
@@ -94,7 +94,7 @@ them:
 > fail *closed* instead of running degraded.
 
 Chapter 2 and OpenShift cannot host the gVisor composition (rootless podman cannot
-drive `runsc`; gVisor is not a supported OpenShift runtime) — lessons 14, 15 and 18
+drive `runsc`; gVisor is not a supported OpenShift runtime) — lessons 1.2.5, 1.2.6 and 1.4.5
 document why, and point back at the chapter where each composition runs for real.
 
 ## 5. The short version

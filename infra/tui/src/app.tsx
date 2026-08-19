@@ -839,7 +839,7 @@ function App() {
       // chapter 4's box-less lessons never appearing here. A live `up` counts as a box on the way:
       // ctl.py accepts the run and run.sh's wait-box stage holds it until ready.
       if (!avail.run) {
-        if (info?.cluster) return setNotice(`${selected}: a cluster, not a lesson — run lesson-10..13 against it from their own folders`)
+        if (info?.cluster) return setNotice(`${selected}: a cluster, not a lesson — run 1.4.1..1.4.6 against it from their own folders`)
         if (info?.progress.running) return setNotice(`${selected}: ${info.progress.run?.op ?? 'operation'} already running — s stops it`)
         if (info?.box && info.box_live === false) return setNotice(`${selected}: box GONE (not in account) — press c to reconcile`)
         return setNotice(`${selected}: no box — press u first (nothing is running for it)`)

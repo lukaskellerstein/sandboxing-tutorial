@@ -1,0 +1,47 @@
+# Lesson 17's policy — lesson 9's, unchanged, stacked on Kata this time.
+#
+# Byte-for-byte lesson 9's (and lesson 16's) policy. The only variable across all three is the runtime
+# underneath: runc in lesson 9, gVisor in lesson 16, and here a Kata VM. Lesson 16 watched the
+# `filesystem_policy` clause below vanish under gVisor; this rung applies the SAME file to a Kata
+# sandbox and watches it hold, because a real guest kernel ships Landlock.
+#
+# The endpoint host is a placeholder main.py substitutes at run time — a generated file rather than a
+# literal so a stale FQDN can never make the policy look enforced when it is not. (The token appears
+# exactly once, in `host:` — keep it that way.)
+#
+# Applied at sandbox CREATE; the static sections below cannot be hot-reloaded.
+
+version: 1
+
+# --- static: locked at sandbox create, never hot-reloaded ---------------------
+
+filesystem_policy:
+  include_workdir: true
+  # /etc is read-only — the path the `fs_policy_write` probe writes to and expects refused. Under Kata
+  # that refusal is Landlock doing its job inside the guest, exactly as it did on runc in lesson 9.
+  read_only: [/usr, /lib, /bin, /sbin, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+
+landlock:
+  # best_effort — the same honest default lesson 16 uses. There it fails open, because gVisor lacks
+  # Landlock. Here it makes no difference: Kata's guest kernel HAS Landlock, so best_effort and
+  # hard_requirement behave identically (both enforce). Part 2 confirms hard_requirement also starts.
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+# --- dynamic: hot-reloadable ---------------------------------------------------
+
+network_policies:
+  model_gateway:
+    name: model-gateway-readonly
+    endpoints:
+      - host: __GATEWAY_HOST__
+        port: 8080
+        protocol: rest # L7: OpenShell parses HTTP, so rules can name methods
+        enforcement: enforce # `audit` would record without blocking
+        access: read-only # GET/HEAD/OPTIONS allowed; POST/PUT/PATCH/DELETE denied
+    binaries:
+      - { path: /usr/bin/curl }

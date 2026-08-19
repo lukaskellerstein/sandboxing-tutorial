@@ -1,0 +1,10 @@
+[project]
+name = "lesson-04-audit-container-openshell"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.2.4: auditing the OpenShell rung; the host sensor sees again, and a second sensor names the network."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.ruff]
+extend = "../../../../ruff.toml"
+src = ["."]

@@ -1,0 +1,15 @@
+[project]
+name = "lesson-01-audit-no-sandbox"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.1.1: auditing the no-sandbox baseline with host auditd."
+requires-python = ">=3.12"
+# Same as 1.1.1: this lesson runs the suite as a NATIVE process, and attack 5 (malicious_package)
+# needs a package manager present to answer "can this environment install a package?". A uv venv
+# ships without pip, so without this the probe reports "pip is missing" and reads as a false block.
+dependencies = ["pip>=25"]
+
+[tool.ruff]
+# Pull in the repo-root policy explicitly — a leaf [tool.ruff] shadows the root rather than merging.
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

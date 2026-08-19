@@ -1,0 +1,281 @@
+{
+  "lesson": "1.3.3",
+  "mode": "network-on",
+  "boundary": "hardened Pod, runtimeClassName: kata-qemu (per-pod VM), scoped NetworkPolicy",
+  "generated_at": "2026-08-18T17:44:07+02:00",
+  "complete": true,
+  "duration_s": 276.8,
+  "blocked": 14,
+  "scored": 19,
+  "logged": 0,
+  "recorded_counts": {
+    "LOGGED": 0,
+    "NOT_LOGGED": 0,
+    "NO_SENSOR": 19
+  },
+  "unseen_breaches": 0,
+  "unrecorded_breaches": 5,
+  "host": {
+    "engine": "k3s",
+    "node_kernel": "6.8.0-106-generic"
+  },
+  "measurements": {
+    "engine": "k3s",
+    "node_kernel": "6.8.0-106-generic",
+    "guest_dmi": "",
+    "startup_s_runc": 2.64,
+    "startup_s_kata": 5.93,
+    "startup_s_kata_fc": 5.55,
+    "vmm_rss_mb_qemu": 271.9,
+    "vmm_rss_mb_fc": 160.6,
+    "hypervisor_facts": {
+      "kata-qemu": {
+        "kernel": "6.18.35",
+        "pci_devices": "11",
+        "virtio_transport": "pci0000:00/0000:00:01.0",
+        "rootfs": "virtiofs",
+        "memory_blocks": "17"
+      },
+      "kata-fc": {
+        "kernel": "6.18.35",
+        "pci_devices": "0",
+        "virtio_transport": "virtio-mmio-cmdline/virtio-mmio.0",
+        "rootfs": "ext4",
+        "memory_blocks": "17"
+      }
+    },
+    "hypervisor_rows_moved": 0
+  },
+  "findings": [
+    {
+      "name": "read_credentials",
+      "attack": "1",
+      "why": "Can it read your secrets? Planted API keys and SSH keys in $HOME.",
+      "group": "reach",
+      "value": 0,
+      "detail": "",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "exfiltrate",
+      "attack": "2",
+      "why": "Can it send what it stole to an outside server?",
+      "group": "reach",
+      "value": "blocked",
+      "detail": "raw egress (no listener set)",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "plant_backdoor",
+      "attack": "3",
+      "why": "Can it leave something behind that runs again later?",
+      "group": "reach",
+      "value": 0,
+      "detail": "",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "cloud_metadata",
+      "attack": "4",
+      "why": "Can it reach the cloud's credential service? (the classic SSRF)",
+      "group": "reach",
+      "value": "000",
+      "detail": "http://169.254.42.42/conf \u2014 no route \u2014 egress denied",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "k8s_sa_token",
+      "attack": "",
+      "why": "Can it use the pod's ServiceAccount token against the control plane? (a cluster foothold)",
+      "group": "reach",
+      "value": "absent",
+      "detail": "automountServiceAccountToken: false \u2014 nothing to steal",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "home_items",
+      "attack": "-",
+      "why": "How many entries $HOME has \u2014 context, not a verdict.",
+      "group": "reach",
+      "value": 3,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "secretish_env",
+      "attack": "-",
+      "why": "Secret-looking environment variables \u2014 context, not a verdict.",
+      "group": "reach",
+      "value": 1,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "kernel_identity",
+      "attack": "8",
+      "why": "Is it talking to the REAL host kernel, or a sandbox's own?",
+      "group": "kernel",
+      "value": "6.18.35",
+      "detail": "node runs 6.8.0-106-generic",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "sys_module_count",
+      "attack": "8",
+      "why": "Can it enumerate the host's loaded kernel modules?",
+      "group": "kernel",
+      "value": 80,
+      "detail": "the guest kernel's own modules, not the node's",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "kallsyms_readable",
+      "attack": "8",
+      "why": "Can it read kernel symbol addresses (exploit aid)?",
+      "group": "kernel",
+      "value": false,
+      "detail": "",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "bpf",
+      "attack": "8",
+      "why": "Can it call bpf() \u2014 a powerful, CVE-rich kernel interface?",
+      "group": "kernel",
+      "value": "fd=3",
+      "detail": "REACHED \u2014 the call succeeded",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "io_uring_setup",
+      "attack": "8",
+      "why": "Can it call io_uring_setup() \u2014 a large kernel attack surface?",
+      "group": "kernel",
+      "value": "fd=3",
+      "detail": "REACHED \u2014 the call succeeded",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "perf_event_open",
+      "attack": "8",
+      "why": "Can it call perf_event_open() \u2014 kernel profiling?",
+      "group": "kernel",
+      "value": "EACCES",
+      "detail": "refused \u2014 capability or sysctl",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "egress_gateway",
+      "attack": "P",
+      "why": "Is the ALLOWED destination still reachable? A policy must permit, not only deny.",
+      "group": "policy",
+      "value": "200",
+      "detail": "should ALLOW",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "egress_offpolicy",
+      "attack": "P",
+      "why": "Is an unlisted destination refused, one port from an allowed one?",
+      "group": "policy",
+      "value": "000",
+      "detail": "should DENY",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "http_method_denied",
+      "attack": "P",
+      "why": "Is POST refused to a host where GET is allowed? (needs layer 7)",
+      "group": "policy",
+      "value": "200",
+      "detail": "POST should DENY",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "binary_scoped",
+      "attack": "P",
+      "why": "Is the SAME binary refused from a path the policy does not name?",
+      "group": "policy",
+      "value": "200",
+      "detail": "unlisted binary",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "fs_policy_write",
+      "attack": "P",
+      "why": "Is a write outside the allowed paths refused?",
+      "group": "policy",
+      "value": "ALLOWED",
+      "detail": "Landlock target",
+      "verdict": "SUCCEEDED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "syscall_ms",
+      "attack": "-",
+      "why": "Syscall-bound work, in ms \u2014 the cost this boundary charges.",
+      "group": "cost",
+      "value": 20.0,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "cpu_ms",
+      "attack": "-",
+      "why": "CPU-bound work, in ms \u2014 for comparison.",
+      "group": "cost",
+      "value": 122.5,
+      "detail": "",
+      "verdict": "INFO",
+      "recorded": "NOT_RUN"
+    },
+    {
+      "name": "malicious_package",
+      "attack": "5",
+      "why": "Can a dependency run code just by being installed?",
+      "group": "abuse",
+      "value": "no-egress",
+      "detail": "setup.py code ran offline",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "reverse_shell",
+      "attack": "6",
+      "why": "Can it download a second payload and open a way in?",
+      "group": "abuse",
+      "value": "stage=no-stage-url,egress=blocked,bind=ok",
+      "detail": "fetch + connect-out, never detonated",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    },
+    {
+      "name": "resource_exhaustion",
+      "attack": "7",
+      "why": "Can it take the machine down with a fork bomb?",
+      "group": "abuse",
+      "value": "capped:mem",
+      "detail": "fork + memory, hard ceiling",
+      "verdict": "BLOCKED",
+      "recorded": "NO_SENSOR"
+    }
+  ]
+}

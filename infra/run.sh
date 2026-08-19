@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Run one lesson ON ITS BOX and bring the scorecard home.
 #
-#   ./run.sh lesson-03-container-gvisor
-#   ./run.sh lesson-01-no-sandbox -- --part 2      # args after -- go to the lesson
+#   ./run.sh 1.2.2                          # the dotted lesson id (phase.chapter.lesson)
+#   ./run.sh 1.1.1 -- --part 2              # args after -- go to the lesson
 #
 # The lesson runs on the box because that is where the boundary is. Nothing about it is remote-aware:
 # it is the same `cd <lesson> && uv sync && uv run python -u main.py` a reader types by hand, which is
@@ -13,28 +13,21 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 source "${HERE}/lib.sh"
 
-LESSON="${1:?usage: ./run.sh <lesson> [-- <args for main.py>]}"
+LESSON="${1:?usage: ./run.sh <id> [-- <args for main.py>]   (id is P.C.L, e.g. 1.2.2)}"
 shift
 [ "${1:-}" = "--" ] && shift
 ARGS="$*"
 
-# The BOX is where this runs; the LESSON is what runs. Usually the same name, but chapter 3's four
-# lessons share `chapter-03-k8s`, and past this point the two are used for genuinely different jobs:
-# BOX picks the machine (state, ssh, rsync), LESSON picks the directory to cd into, the run history
-# to record under, and the report to render. Collapsing them is what made sharing impossible before.
+# The BOX is where this runs; the LESSON is what runs. Usually different now: LESSON is a dotted id
+# (`1.2.2`), and chapter 3's lessons share `chapter-03-k8s`. Past this point the two do different
+# jobs: BOX picks the machine (state, ssh, rsync); LESSON picks the run history to record under and
+# the report to render; LESSON_REL is the directory to cd into.
 BOX=$(lesson_box "${LESSON}")
 
-# Lessons live under their chapter folder (tutorial/<chapter>/<lesson>), and the tree is the only
-# place that mapping exists — lessons.json stays keyed by bare lesson name, so a glob resolves the
-# directory. Demand exactly one match: zero is a lesson outside any chapter folder, two is a
-# duplicated leaf, and both are real errors rather than a silent first-wins.
-LESSON_REL=""
-for d in "${REPO_ROOT}"/tutorial/*/"${LESSON}"; do
-  [ -d "${d}" ] || continue
-  [ -z "${LESSON_REL}" ] || die "tutorial/*/${LESSON} matches more than one chapter folder"
-  LESSON_REL="${d#"${REPO_ROOT}"/}"
-done
-[ -n "${LESSON_REL}" ] || die "no tutorial/*/${LESSON} — is the lesson under a chapter folder?"
+# The leaf directory the id resolves to, under tutorial/<phase>/<chapter>/<lesson>. lesson_relpath
+# (lib.sh) is the one implementation of id->path and demands exactly one match — zero or many is a
+# broken tree, not a silent first-wins.
+LESSON_REL=$(lesson_relpath "${LESSON}")
 
 # A run may be asked for while ./up.sh is still building the box — the panel's `u` then `r`,
 # seconds apart. Running early is not merely premature: the rsync below and up.sh's sync stage
@@ -62,7 +55,7 @@ say "running ${LESSON} on ${BOX_IP}"
 # SANDBOXING_TUTORIAL_DISPOSABLE=1 is the box telling the lesson it is allowed to do real damage.
 # Only ever set here, and only on a machine `down.sh` is about to destroy.
 # `source ~/.bashrc` is not decoration: a substrate may have exported what the lesson needs there
-# (lesson 5's DOCKER_HOST and OPENSHELL_DRIVERS), and a non-interactive ssh reads no profile at all.
+# (lesson 1.2.4's DOCKER_HOST and OPENSHELL_DRIVERS), and a non-interactive ssh reads no profile at all.
 # Attack 4 probes a cloud-metadata endpoint, and WHICH address matters. The suite defaults to AWS's
 # 169.254.169.254, which does not answer on Scaleway — so the row read BLOCKED everywhere and the
 # baseline lost the SSRF finding it exists to show, for a reason that had nothing to do with any

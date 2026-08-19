@@ -1,0 +1,13 @@
+[project]
+name = "lesson-01-audit-openshift-pod"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.4.1: auditing the OpenShift rung with the node's auditd and the kube-apiserver audit log."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs in the pod, and this leaf only drives `oc` and parses its output
+# with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

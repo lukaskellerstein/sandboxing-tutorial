@@ -80,7 +80,7 @@ environment variables and are always ours.
 | Variable | Used by | Meaning |
 | :-- | :-- | :-- |
 | `PROBE_GROUPS` | driver | comma-separated groups (default: `reach,abuse,kernel,cost`) |
-| `PLANT_FAKE_SECRETS=1` | lesson 1 | plant fake canary credentials into `$HOME` first |
+| `PLANT_FAKE_SECRETS=1` | lesson 1.1.1 | plant fake canary credentials into `$HOME` first |
 | `PROBE_EXFIL_URL` | attack 2 | where stolen data would go (our listener); unset ⇒ raw-egress test |
 | `PROBE_METADATA_URL` | attack 4 | cloud-metadata endpoint |
 | `PROBE_INDEX_URL` | attack 5 | a package index to reach (default: PyPI) |

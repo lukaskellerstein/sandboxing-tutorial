@@ -31,20 +31,21 @@ confirmation.
 One folder per chapter, one directory per lesson inside it, each lesson a
 **standalone `uv` project**. No workspace, no shared package, no imports across
 leaves: a learner clones the repo, `cd`s into one lesson, and runs it. The tree
-is the only place the lesson→chapter mapping exists — `infra/run.sh` resolves
-`tutorial/*/<lesson>` with a glob, and `lessons.json` stays keyed by bare
-lesson name.
+is the only place the id→leaf mapping exists — `infra/run.sh` resolves
+`tutorial/phase<P>-*/chapter-<C>-*/lesson-<LL>-*` with a glob, and `lessons.json`
+stays keyed by dotted id.
 
 Every leaf carries:
 
 ```text
-chapter-N-<name>/
-└── lesson-NN-<name>/
-    ├── main.py           the runnable entrypoint (< ~200 lines)
-    ├── README.md         the lesson text
-    ├── pyproject.toml    deps + [tool.ruff] extending the root ruff.toml
-    ├── uv.lock
-    └── .gitignore        .venv/, __pycache__/, *.pyc, .python-version
+phaseN-<name>/
+└── chapter-N-<name>/
+    └── lesson-NN-<name>/
+        ├── main.py           the runnable entrypoint (< ~200 lines)
+        ├── README.md         the lesson text
+        ├── pyproject.toml    deps + [tool.ruff] extending the root ruff.toml
+        ├── uv.lock
+        └── .gitignore        .venv/, __pycache__/, *.pyc, .python-version
 ```
 
 `pyproject.toml` must extend the root config explicitly — a leaf carrying
@@ -54,7 +55,7 @@ configured:
 
 ```toml
 [tool.ruff]
-extend = "../../../ruff.toml"   # count the directories — depth varies with nesting
+extend = "../../../../ruff.toml"   # count the directories — depth varies with nesting
 src = ["."]
 ```
 
@@ -98,7 +99,7 @@ remove that exclusion.
 sandboxing-tutorial/
 ├── README.md                  what this is, the isolation ladder, prerequisites
 ├── syllabus.md                NOT WRITTEN YET — source of truth for lessons
-├── tutorial/                  chapter folders holding the lesson leaves
+├── tutorial/                  phase folders holding the chapter folders and their lesson leaves
 ├── ruff.toml                  root lint/format policy for every leaf
 ├── .editorconfig              shfmt's only config source
 ├── .shellcheckrc              shellcheck opt-in

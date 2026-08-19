@@ -9,17 +9,17 @@ adding a chapter needs no code change; `check.sh` dispatches on the **basename**
 assertions stay named after the boundary rather than after the tree.
 
 The directory names stay the short `chapter-N` on purpose: they are already
-chapter-grouped, matching `tutorial/chapter-2-one-host/` and
-`tutorial/chapter-3-kubernetes/` by number, and renaming them would touch every
+chapter-grouped, matching `tutorial/phase1-attacks/chapter-2-one-host/` and
+`tutorial/phase1-attacks/chapter-3-kubernetes/` by number, and renaming them would touch every
 `substrates` string in `lessons.json` for a purely cosmetic gain.
 (`infra/openshift-sno/` is chapter 4's substrate in the same sense — kept apart
 because its install replaces the box's OS and cannot run through `up.sh`.)
 
 - **`chapter-2/`** — `10`–`50`, one host. `10`+`20`+`30`+`35` install onto the ONE host
-  **lessons 2–4** share (`chapter-02-host`); `50`+`40` build lesson 5's own box, the one
+  **lessons 1.2.1–1.2.3** share (`chapter-02-host`); `50`+`40` build lesson 1.2.4's own box, the one
   lesson pinned off the shared host by OpenShell's private-primary-address requirement.
 - **`chapter-3/`** — `60`–`90`, Kubernetes. All five install onto the ONE cluster
-  **lessons 6–9** share (`chapter-03-k8s`). Documented at the end of this file.
+  **lessons 1.3.1–1.3.4** share (`chapter-03-k8s`). Documented at the end of this file.
 
 > [!warning]
 > **Chapter 3's order is load-bearing, and it is about restarts rather than files.**
@@ -48,21 +48,21 @@ runtimeClassName: gvisor   4.19.0-gvisor
 runtimeClassName: kata-qemu 6.18.35              <- a real guest VM, same kernel metal recorded
 ```
 
-All read from inside the sandbox. Lessons 6, 7 and 8 then reproduced their separate-box scores
-exactly (14, 16, 14 of 19).
+All read from inside the sandbox. Lessons 1.3.1, 1.3.2 and 1.3.3 then reproduced their separate-box
+scores exactly (14, 16, 14 of 19).
 
 ## …but `90-k8s-openshell` does not fit beside them on 8 GB
 
 With `90` also installed, the OpenShell gateway and Agent Sandbox controller stay resident from
-provisioning onward, and lesson 8's **Part 3b** — which boots Kata guests repeatedly to time the
+provisioning onward, and lesson 1.3.3's **Part 3b** — which boots Kata guests repeatedly to time the
 per-pod VM tax — took the whole box down mid-run: ssh dropped (`Connection closed by remote host`),
-and lesson 9 could not reach the machine at all afterwards. Lesson 8 had passed that same Part 3b
-on an 8 GB box carrying `60`+`80` and no gateway, which is what points at memory rather than at a
-substrate conflict.
+and lesson 1.3.4 could not reach the machine at all afterwards. Lesson 1.3.3 had passed that same
+Part 3b on an 8 GB box carrying `60`+`80` and no gateway, which is what points at memory rather than
+at a substrate conflict.
 
 The obvious fix — a bigger box — **is not available on this account**: `POP2-4C-16G`, `PRO2-XS`,
 `BASIC3-X4C-16G` and `BASIC3-X6C-24G` all fail to create with `has reached its quota (0/0)`, and
-`PLAY2-MICRO` is the largest `PLAY2`. So lesson 9 keeps its own box. It also loses the least by
+`PLAY2-MICRO` is the largest `PLAY2`. So lesson 1.3.4 keeps its own box. It also loses the least by
 being separate: OpenShell is the one chapter-3 boundary **not** selected with `runtimeClassName`
 (its sandboxes take that from the gateway), so it was never part of the per-pod menu.
 
@@ -70,7 +70,7 @@ being separate: OpenShell is the one chapter-3 boundary **not** selected with `r
 > **SUPERSEDED (2026-08-13, same day): the quota was an identity gate, and it is lifted.** The
 > `0/0` above was the account's *unverified identity*, not stock; with identity verified,
 > `PRO2-XS` and `PRO2-S` create normally. All four chapter-3 lessons now share one `PRO2-S`
-> (32 GB) node carrying `60`+`70`+`75`+`80`+`90`, and lesson 8's Part 3b runs beside the resident
+> (32 GB) node carrying `60`+`70`+`75`+`80`+`90`, and lesson 1.3.3's Part 3b runs beside the resident
 > gateway without taking it down — measured, see `syllabus.md` § *Verified on this hardware*.
 > `90` runs last and must not restart k3s (it does not: `systemctl --user` services only), so
 > kata-deploy survives it — `check.sh` proves that by booting a Kata guest after all five
@@ -84,7 +84,7 @@ being separate: OpenShell is the one chapter-3 boundary **not** selected with `r
 > each is marked **SUPERSEDED** in place rather than deleted, because the reasoning
 > that produced them is the useful part:
 >
-> - *"lesson 5's guest must be L1, so its box is bare metal"* — the symptom behind
+> - *"lesson 1.2.4's guest must be L1, so its box is bare metal"* — the symptom behind
 >   that was BIOS-vs-UEFI, not nesting. See the correction at the end.
 > - *"a VM cannot carry Kata"* — a Scaleway VM exposes `/dev/kvm` **and**
 >   `/dev/vhost-vsock`; Kata boots guest kernel `6.18.35` there, the same one metal
@@ -95,11 +95,11 @@ being separate: OpenShell is the one chapter-3 boundary **not** selected with `r
 
 | # | Substrate | Lesson | Result | Proof (from inside the box) |
 | :-- | :-- | :-- | :-- | :-- |
-| `10-podman.sh` | podman rootless container | 2 | ✅ **works** | plain container → `uname -r` = **6.8.0-88-generic** (host kernel — no kernel boundary, correct for lesson 2) |
-| `20-runsc.sh` | gVisor (`runsc`) | 3 | ✅ **works** | container under `--runtime runsc` → `uname -r` = **4.19.0-gvisor**. **No `label=disable` needed** on Ubuntu (that trap was CoreOS-only) |
-| `30-containerd-kata.sh` | Kata (containerd + nerdctl + kata-static) | 4 | ✅ **works** | `--runtime io.containerd.kata.v2` → `uname -r` = **6.18.35** (a real guest VM kernel, ≠ node's 6.8.0-88). Coexists with podman (daemonless) |
-| `35-containerd-devmapper.sh` | Firecracker as a second hypervisor under Kata | 4 | ✅ **works** | `--snapshotter devmapper --runtime io.containerd.kata-fc.v2` → **0 PCI devices** and `rootfs=ext4`, against kata-qemu's 10 and `virtiofs`. Same guest kernel `6.18.35` under both. See below |
-| `40-openshell.sh` | NVIDIA OpenShell | 5 | ⚠️ **installs; blocked on podman version** | see below |
+| `10-podman.sh` | podman rootless container | 1.2.1 | ✅ **works** | plain container → `uname -r` = **6.8.0-88-generic** (host kernel — no kernel boundary, correct for lesson 1.2.1) |
+| `20-runsc.sh` | gVisor (`runsc`) | 1.2.2 | ✅ **works** | container under `--runtime runsc` → `uname -r` = **4.19.0-gvisor**. **No `label=disable` needed** on Ubuntu (that trap was CoreOS-only) |
+| `30-containerd-kata.sh` | Kata (containerd + nerdctl + kata-static) | 1.2.3 | ✅ **works** | `--runtime io.containerd.kata.v2` → `uname -r` = **6.18.35** (a real guest VM kernel, ≠ node's 6.8.0-88). Coexists with podman (daemonless) |
+| `35-containerd-devmapper.sh` | Firecracker as a second hypervisor under Kata | 1.2.3 | ✅ **works** | `--snapshotter devmapper --runtime io.containerd.kata-fc.v2` → **0 PCI devices** and `rootfs=ext4`, against kata-qemu's 10 and `virtiofs`. Same guest kernel `6.18.35` under both. See below |
+| `40-openshell.sh` | NVIDIA OpenShell | 1.2.4 | ⚠️ **installs; blocked on podman version** | see below |
 
 **All three of 10/20/30 coexist on one box** — podman's default runtime stays
 `crun`, containerd runs separately, runsc is opt-in. That was the coexistence
@@ -118,9 +118,9 @@ rather than a DaemonSet. With one kata-qemu guest resident the host used 774 MB 
 
 ## Firecracker under Kata (2026-08-13) — and two traps that look like success
 
-`35-containerd-devmapper.sh` adds a **second hypervisor** under the runtime lesson 4
+`35-containerd-devmapper.sh` adds a **second hypervisor** under the runtime lesson 1.2.3
 already installed. It is not a new rung: both boot the same guest kernel through KVM,
-and lesson 4's score is unchanged at 7/13. What differs is the machine underneath.
+and lesson 1.2.3's score is unchanged at 7/13. What differs is the machine underneath.
 
 ```text
                  kernel     /sys/bus/pci/devices   rootfs
@@ -159,7 +159,7 @@ reads like a Kata bug and is a missing storage prerequisite. That is the same sy
 upstream [kata-containers#12558](https://github.com/kata-containers/kata-containers/issues/12558),
 still open.
 
-## OpenShell (lesson 5) — precise status
+## OpenShell (lesson 1.2.4) — precise status
 
 - ✅ OpenShell **0.0.97 installs** via the official `install.sh` (CLI **and** the
   `openshell-gateway` systemd daemon at `https://127.0.0.1:17670`). `uv tool
@@ -204,16 +204,16 @@ Re-ran on **Debian 13 (trixie), podman 5.4.2, pasta** as a non-root `agent` user
 **So: podman 5 is necessary AND sufficient for the original problem; it is not
 sufficient on a public-IP bare-metal host.** OpenShell's rootless-podman path
 assumes a **private default-route IP** — true on a laptop's podman-machine VM
-(what the prior art used), a NAT'd cloud VM, or a k8s node (lesson 9's k8s driver,
+(what the prior art used), a NAT'd cloud VM, or a k8s node (lesson 1.3.4's k8s driver,
 where the pod network is private), but NOT on bare metal with a public IP.
 
-**Implication for the tutorial (design decision needed):** lesson 5 (local
+**Implication for the tutorial (design decision needed):** lesson 1.2.4 (local
 container OpenShell) needs a host with a **private default-route IP**. Options,
 cheapest first: (a) attach a **Scaleway Private Network** and make it the default
 route; (b) run OpenShell on a NAT'd VM rather than bare metal; (c) fold OpenShell
-into the k8s track only (lesson 9's kubernetes driver sidesteps this entirely).
+into the k8s track only (lesson 1.3.4's kubernetes driver sidesteps this entirely).
 This is a genuine tension with the "remote bare-metal, one public IP per box"
-substrate choice — flag it before writing lesson 5.
+substrate choice — flag it before writing lesson 1.2.4.
 
 **Status:** verified-installed = 0.0.98 · verified-driver-connects = yes (podman 5)
 · verified-sandbox-runs = **no** (blocked by public-IP default route on bare metal;
@@ -244,8 +244,8 @@ fully-working option 1 on Scaleway EM would require a **Private Network made the
 real default route via a Public Gateway (NAT)** — a VPC + paid gateway + a
 console-less routing change that risks SSH lockout. Not worth it for one lesson.
 
-**Decision recommended:** run lesson-5 OpenShell on a **NAT'd host with a private
-default-route IP**. Cleanest = the **k8s driver** (chapter 3 / lesson 9) — the pod
+**Decision recommended:** run lesson 1.2.4's OpenShell on a **NAT'd host with a private
+default-route IP**. Cleanest = the **k8s driver** (chapter 3 / lesson 1.3.4) — the pod
 network is private and this entire class of problem disappears. Second choice = a
 NAT'd cloud VM (a Scaleway *Instance*, which natively has a private default-route
 IP), noting OpenShell does not need `/dev/kvm`, so it need not be on bare metal.
@@ -263,7 +263,7 @@ IP), noting OpenShell does not need `/dev/kvm`, so it need not be on bare metal.
 > The public address sits **directly on the NIC**, which is what "routed IP" means.
 > The private-default-route claim above describes Scaleway's retired **NAT** model
 > and no longer holds for instances created today. So the OpenShell blocker applies
-> to Elastic Metal **and** to plain Instances alike, and lesson 5's box has to build
+> to Elastic Metal **and** to plain Instances alike, and lesson 1.2.4's box has to build
 > its own NAT topology (`50-nat-vm.sh`) rather than inherit one.
 >
 > Two other things that measurement settled, both useful elsewhere: a Scaleway
@@ -290,7 +290,7 @@ Error:   × configuration error: compute driver 'podman' requested the gateway
   │ default-route interface)
 ```
 
-**The resolution lesson 5 uses: build the NAT topology instead of looking for one.**
+**The resolution lesson 1.2.4 uses: build the NAT topology instead of looking for one.**
 A libvirt guest on the default `virbr0` network has a genuinely private *primary*
 address on its default-route interface (192.168.122.0/24), which is exactly what
 the check wants — and it is the same shape that makes OpenShell work on a laptop,
@@ -308,13 +308,13 @@ then runs *inside* the guest, reached through the box as a jump host.
 > Re-tested with the flag in place: the NAT guest boots on a Scaleway **VM**,
 > `virsh domstate` = `running`, lease `192.168.122.53/24` on `virbr0` — a private
 > primary address on the default-route interface, which is the whole requirement.
-> So lesson 5 does **not** need metal.
+> So lesson 1.2.4 does **not** need metal.
 
-**That guest must be L1, so lesson 5's box is bare metal.** Measured: on a Scaleway
+**That guest must be L1, so lesson 1.2.4's box is bare metal.** Measured: on a Scaleway
 Instance — itself a VM — the guest's grub loads, prints ``Booting `Debian
 GNU/Linux'``, and the kernel then resets in a loop, forever, with `--machine pc`
 and `--cpu qemu64` too. Nested KVM inside a cloud VM is the failure; on Elastic
-Metal there is no L0, which is the same reason lesson 4's Kata VMs work there.
+Metal there is no L0, which is the same reason lesson 1.2.3's Kata VMs work there.
 The host stays Ubuntu — only the **guest** needs Debian 13, for podman 5 + pasta.
 
 Also worth recording: the installer is now a system **`.deb`** (`openshell_0.0.99-1_amd64.deb`)
@@ -357,7 +357,7 @@ in the cloud-config it generates, found by reading the guest's serial console:
    config` — no `agent` user, no podman, no hostname. The guest still boots and
    takes a DHCP lease, so the only visible symptom is `Permission denied
    (publickey)` on the next hop, which reads like a key problem. Host-independent
-   and fatal; this is why lesson 5 never produced a scorecard.
+   and fatal; this is why lesson 1.2.4 never produced a scorecard.
 2. **`authorized_keys` was copied unfiltered.** On a Scaleway VM that file is
    generated by `scw-fetch-ssh-keys` with a 16-line comment header, so prefixing
    every line with a `-` list marker fed cloud-init `- #` list items. On Elastic Metal the file
@@ -378,7 +378,7 @@ check)` and was being executed.
 
 ---
 
-## Chapter 3 substrates — Kubernetes (lessons 6–9)
+## Chapter 3 substrates — Kubernetes (lessons 1.3.1–1.3.4)
 
 Single-node **k3s** on the lesson's own disposable VM. Why k3s rather than a managed
 cluster (Kapsule) or a nested one (minikube, kind) is argued once, in
@@ -388,11 +388,11 @@ cannot host at all.
 
 | # | Substrate | Lesson | Result | Proof (from inside the box) |
 | :-- | :-- | :-- | :-- | :-- |
-| `60-k8s.sh` | k3s `v1.36.3+k3s1`, containerd `2.3.2-k3s2` | 6 | ✅ **works** | plain pod → `uname -r` = **6.8.0-106-generic**, the node's. Correct: a pod is not a kernel boundary |
-| `70-k8s-gvisor.sh` | gVisor `release-20260803.0` as a containerd runtime + RuntimeClass | 7 | ✅ **works** | pod under `runtimeClassName: gvisor` → **4.19.0-gvisor**, `/sys/module` 216 → **0** |
-| `75-k8s-devmapper.sh` | devmapper snapshotter, so `kata-fc` stops being decorative | 8 | ✅ **works** | pod under `runtimeClassName: kata-fc` → **0 PCI devices** against `kata-qemu`'s 10, same guest kernel. See below |
-| `80-k8s-kata.sh` | kata-deploy `4.0.0` Helm chart, `k8sDistribution=k3s` | 8 | see below | |
-| `90-k8s-openshell.sh` | agent-sandbox `v0.5.4` + OpenShell chart `0.0.99` | 9 | see below | |
+| `60-k8s.sh` | k3s `v1.36.3+k3s1`, containerd `2.3.2-k3s2` | 1.3.1 | ✅ **works** | plain pod → `uname -r` = **6.8.0-106-generic**, the node's. Correct: a pod is not a kernel boundary |
+| `70-k8s-gvisor.sh` | gVisor `release-20260803.0` as a containerd runtime + RuntimeClass | 1.3.2 | ✅ **works** | pod under `runtimeClassName: gvisor` → **4.19.0-gvisor**, `/sys/module` 216 → **0** |
+| `75-k8s-devmapper.sh` | devmapper snapshotter, so `kata-fc` stops being decorative | 1.3.3 | ✅ **works** | pod under `runtimeClassName: kata-fc` → **0 PCI devices** against `kata-qemu`'s 10, same guest kernel. See below |
+| `80-k8s-kata.sh` | kata-deploy `4.0.0` Helm chart, `k8sDistribution=k3s` | 1.3.3 | see below | |
+| `90-k8s-openshell.sh` | agent-sandbox `v0.5.4` + OpenShell chart `0.0.99` | 1.3.4 | see below | |
 
 ### Four things that cost a provisioned box each to find (2026-08-08)
 
@@ -420,7 +420,7 @@ cannot host at all.
    node's kernel and read as "something is already intercepting". `check.sh` now
    creates → polls for a terminal phase → reads `kubectl logs` → deletes.
 
-4. **In a Pod, attack 7 kills the container instead of being refused.** Lesson 2's
+4. **In a Pod, attack 7 kills the container instead of being refused.** Lesson 1.2.1's
    podman container survives the same 256Mi cap and reports `capped:pids,mem`; the pod
    is `OOMKilled`, because cgroup v2 kills a container's cgroup as a **group**. The row
    proving the cap engaged is therefore the one row the box never prints, so it is
@@ -448,9 +448,9 @@ cannot host at all.
   is gone; any guide telling you to `kubectl apply -k` is describing an older version.
 - **The agent image is tagged `:v1`, never `:latest`.** Kubernetes defaults a `:latest`
   tag to `imagePullPolicy: Always`, so a side-loaded image is ignored and the kubelet
-  chases Docker Hub for something already on disk. Lessons 6–8 could set the policy
-  themselves; **lesson 9 cannot**, because OpenShell owns that pod spec.
-- **`~/.sandboxing-tutorial.env` must be APPENDED to, with a guard.** Lesson 9 runs
+  chases Docker Hub for something already on disk. Lessons 1.3.1–1.3.3 could set the policy
+  themselves; **lesson 1.3.4 cannot**, because OpenShell owns that pod spec.
+- **`~/.sandboxing-tutorial.env` must be APPENDED to, with a guard.** Lesson 1.3.4 runs
   `60-k8s.sh` *and* `90-k8s-openshell.sh`, and a substrate that truncates it would strip
   the `KUBECONFIG` the previous one exported.
 
@@ -492,9 +492,9 @@ Two mechanics worth keeping:
   `crictl images` plainly lists the image. `images/agent/import-k3s.sh` now imports a second time
   with `--snapshotter devmapper` wherever that snapshotter is configured.
 
-### Lesson 9 — OpenShell's kubernetes driver WORKS, and the NAT guest is not needed
+### Lesson 1.3.4 — OpenShell's kubernetes driver WORKS, and the NAT guest is not needed
 
-The open question from chapter 2 is answered. Lesson 5's `50-nat-vm.sh` exists because
+The open question from chapter 2 is answered. Lesson 1.2.4's `50-nat-vm.sh` exists because
 OpenShell's **rootless-podman** driver refuses to start when the host's default-route
 address is public, and every Scaleway box has one. That constraint belongs to the podman
 driver's sandbox callback. Under the **kubernetes** driver the gateway is a workload in
@@ -516,7 +516,7 @@ Two traps found here, both costing a box:
    ```
 
    — because the user service has no `OPENSHELL_DRIVERS` and there is no rootless podman
-   socket to auto-detect. That failure is correct and irrelevant (lesson 9's gateway is
+   socket to auto-detect. That failure is correct and irrelevant (lesson 1.3.4's gateway is
    the Helm release), but the installer **exits non-zero**, which under `set -e` threw
    away a working box. The substrate now tolerates that exit, asserts the binary landed,
    and disables the local service. It also runs `openshell gateway select k8s`, because
@@ -529,5 +529,30 @@ Two traps found here, both costing a box:
 
 Verified: `openshell 0.0.99`, gateway **Connected**, driver `kubernetes`, sandbox Ready,
 policy applied, **19 OCSF decisions recorded**, and `http_method_denied` / `binary_scoped`
-/ `fs_policy_write` all `403`/`PermissionError` where lesson 6's NetworkPolicy let every
+/ `fs_policy_write` all `403`/`PermissionError` where lesson 1.3.1's NetworkPolicy let every
 one of them through.
+
+---
+
+## Chapter 3 AUDIT substrates (phase 2, 2026-08-15)
+
+`chapter-3-audit/` carries the sensors lessons 2.3.x read: `k8s-api-audit` (the apiserver's own
+audit log), `72-k8s-gvisor-trace` (a second `gvisor-trace` RuntimeClass selecting the same runsc
+with `--strace`), and `tetragon` (the host eBPF sensor, pinned v1.7.0).
+
+The measured detail lives in **the scripts' own header comments** and in
+[`docs/my-specs/05-phase-split-and-audit-coverage/current_status.md`](../../docs/my-specs/05-phase-split-and-audit-coverage/current_status.md)
+rather than being copied here, for the reason `lessons.json`'s header gives about second copies.
+Three things are worth knowing before you touch any of them:
+
+1. **Tetragon's `--enable-k8s-api` must stay OFF.** It enables a TracingPolicy CRD watcher the
+   release tarball ships no CRDs for (tetragon exits), never resolves `process.pod` even with
+   `--enable-cri` against k3s's containerd socket, and holds every event up to **30 s** in the
+   EventCache — which turns a prompt capture window into a trail of false `NOT LOGGED`. Events are
+   attributed to a named pod by **container id** instead.
+2. **Order is load-bearing, and it is about restarts.** `k8s-api-audit` and `72-k8s-gvisor-trace`
+   both restart k3s, so both must land **before** `80-k8s-kata` — a restart after it terminates the
+   kata-deploy DaemonSet, which reverts its own install on the way out. `tetragon` restarts nothing.
+3. **`/etc/containerd` does not exist on a k3s node.** `72-k8s-gvisor-trace` creates it. This was
+   found by a from-scratch provision after an incremental one passed on a box where a hand-run probe
+   had already made the directory — the standing argument for verifying from scratch.

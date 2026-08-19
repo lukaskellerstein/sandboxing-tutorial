@@ -214,7 +214,10 @@
     "chapter-3/70-k8s-gvisor": 90,
     "chapter-3/75-k8s-devmapper": 8,
     "chapter-3/80-k8s-kata": 600,
-    "chapter-3/90-k8s-openshell": 420
+    "chapter-3/90-k8s-openshell": 420,
+    "chapter-3-audit/k8s-api-audit": 20,
+    "chapter-3-audit/72-k8s-gvisor-trace": 15,
+    "chapter-3-audit/tetragon": 20
   },
 
   "run": {

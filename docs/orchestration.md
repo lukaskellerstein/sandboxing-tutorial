@@ -118,14 +118,14 @@ isolation is selected* — which is a real, if different, kind of safety.
 ## 4. You already ran this
 
 Agent Sandbox is not hypothetical here — it is a **substrate this tutorial already installs**.
-[`lesson-09-k8s-openshell`](../tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell/) runs
+[Lesson 1.3.4 (`lesson-04-k8s-openshell`)](../tutorial/phase1-attacks/chapter-3-kubernetes/lesson-04-k8s-openshell/) runs
 OpenShell's kubernetes driver, and that driver creates its policy-governed sandbox pods as
 `Sandbox` custom resources against **this** controller. The install is in
 `infra/substrates/chapter-3/90-k8s-openshell.sh` (pinned to `v0.5.4`), the CRD
 `sandboxes.agents.x-k8s.io` and the `agent-sandbox-system` controller are applied there, and
 `infra/check.sh` asserts the CRD is present before any lesson runs.
 
-So when lesson 9 measures OpenShell's policy and audit, it is *already* doing it on top of Agent
+So when lesson 1.3.4 measures OpenShell's policy and audit, it is *already* doing it on top of Agent
 Sandbox. The orchestration layer was there the whole time — this page just names it.
 
 ---
@@ -181,7 +181,7 @@ against `v1alpha1` will need the conversion path; do not assume today's fields a
 
 - [`isolation-layers.md`](isolation-layers.md) — the boundary and policy axes this page sits
   beside; start there for gVisor / Kata / OpenShell
-- [`tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell/`](../tutorial/chapter-3-kubernetes/lesson-09-k8s-openshell/)
+- [`tutorial/phase1-attacks/chapter-3-kubernetes/lesson-04-k8s-openshell/`](../tutorial/phase1-attacks/chapter-3-kubernetes/lesson-04-k8s-openshell/)
   — the lesson that already runs on this controller
 - `infra/substrates/chapter-3/90-k8s-openshell.sh` — where the CRD and controller are installed
   (`v0.5.4`), and `infra/check.sh` — where their presence is asserted

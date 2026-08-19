@@ -1,0 +1,13 @@
+[project]
+name = "lesson-03-audit-openshift-kata"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.4.3: auditing the Kata rung on OpenShift — the node sensor goes blind and the platform blocks the sidecar."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs in the pod, and this leaf only drives `oc` and parses its output
+# with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

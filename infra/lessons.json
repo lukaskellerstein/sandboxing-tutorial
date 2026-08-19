@@ -7,18 +7,18 @@
     "kind is 'vm' (a Scaleway VM, console: Compute -> CPU & GPU Instances) or 'baremetal'",
     "(Scaleway Elastic Metal, console: Bare Metal -> Elastic Metal). It is a per-lesson decision.",
     "",
-    "Lessons 1-5 all run on VMs, and that is a MEASURED choice rather than a cost optimisation.",
+    "Lessons 1.1.1–1.2.4 all run on VMs, and that is a MEASURED choice rather than a cost optimisation.",
     "Measured 2026-08-06 on this account, running the repo's own substrates and lessons unmodified:",
-    "  * lesson 1's full scorecard is row-for-row identical on a VM and on EM-A116X-SSD metal",
+    "  * lesson 1.1.1's full scorecard is row-for-row identical on a VM and on EM-A116X-SSD metal",
     "    (all 17 findings, same BLOCKED/REACHED); rootless podman reports Rootless:true; runsc",
     "    reports 4.19.0-gvisor; the distro hardening the lessons lean on is the same",
     "    (unprivileged_bpf_disabled=2, perf_event_paranoid=4, kptr_restrict=1).",
     "  * a VM exposes /dev/kvm AND /dev/vhost-vsock (AMD EPYC 7543, svm, kvm_amd.nested=1), so",
     "    Kata boots a real guest — kernel 6.18.35, the same guest kernel the metal box recorded,",
-    "    and lesson 4's surprise reproduces (guest unprivileged_bpf_disabled=0 vs node 2).",
-    "  * lesson 5's NAT guest boots on a VM and takes a private primary address on its",
+    "    and lesson 1.2.3's surprise reproduces (guest unprivileged_bpf_disabled=0 vs node 2).",
+    "  * lesson 1.2.4's NAT guest boots on a VM and takes a private primary address on its",
     "    default-route interface (192.168.122.0/24) — which is the whole point of that topology.",
-    "    The older 'the guest must be L1, so lesson 5 needs metal' note was wrong: that symptom",
+    "    The older 'the guest must be L1, so lesson 1.2.4 needs metal' note was wrong: that symptom",
     "    (grub loads, kernel resets forever) was later traced to BIOS-vs-UEFI and seen on metal",
     "    too, which is why 50-nat-vm.sh passes --boot uefi.",
     "",
@@ -31,18 +31,18 @@
     "usable and the Kata stack (nerdctl-full + kata-static) needs 9.3 GB. Metal's large local SSD",
     "hid that, and the failure is a tar dying with 'No space left on device' mid-install.",
     "",
-    "ONE SHARED BOX PER CHAPTER (2026-08-13). Chapter 2 (lessons 2-4) shares `chapter-02-host` and",
-    "chapter 3 (lessons 6-9) shares `chapter-03-k8s`, each carrying every one of its chapter's",
+    "ONE SHARED BOX PER CHAPTER (2026-08-13). Chapter 2 (lessons 1.2.1–1.2.3) shares `chapter-02-host` and",
+    "chapter 3 (lessons 1.3.1–1.3.4) shares `chapter-03-k8s`, each carrying every one of its chapter's",
     "substrates at once. A shared lesson carries `box` instead of hardware, and `box` is the ONLY",
     "indirection in this file: lib.sh's lesson_box() resolves it, everything else keeps reading the",
     "row it lands on. The point is not money — several small short-lived boxes cost about what one",
     "bigger one does. It is that each chapter's claim is `one machine, one flag selects between",
-    "boundaries`, and on a box carrying only gVisor the `runtimeClassName: gvisor` in lesson 7 (or",
-    "lesson 3's `--runtime runsc`) is a choice from a menu of one. On the shared box the other",
+    "boundaries`, and on a box carrying only gVisor the `runtimeClassName: gvisor` in lesson 1.3.2 (or",
+    "lesson 1.2.2's `--runtime runsc`) is a choice from a menu of one. On the shared box the other",
     "runtimes are installed and provably working beside it, so the flag is doing what the chapter",
     "says it does. check.sh proves that at provision time: it dispatches per substrate, so a",
     "five-substrate entry fires all five boundary assertions against the one machine before any",
-    "lesson runs. The one exception is lesson 5, pinned to its own box by OpenShell's",
+    "lesson runs. The one exception is lesson 1.2.4, pinned to its own box by OpenShell's",
     "private-primary-address requirement — the constraint is spelled out in chapter-02-host's `why`.",
     "",
     "The honest cost: running ONE shared lesson now installs its whole chapter's substrates (~30 min",
@@ -56,20 +56,20 @@
     "  * every boundary in the chapter is installed AT NODE LEVEL — runsc's binaries and a containerd",
     "    runtime, kata-static plus /dev/kvm, the OpenShell gateway. Managed node pools reconcile that",
     "    away, and minikube's docker driver nests the node inside a container, which breaks Kata and",
-    "    makes lesson 6's 'the pod runs on the node's kernel' claim untrue of the thing you ran.",
+    "    makes lesson 1.3.1's 'the pod runs on the node's kernel' claim untrue of the thing you ran.",
     "  * a managed cluster hands you a kubeconfig, and a kubeconfig is a CREDENTIAL. k3s writes its",
     "    own on the box and it never leaves, so nothing has to be kept out of the repo by hand.",
     "  * k3s costs ~1.2 GB idle and 30-60 seconds, against 4-6 minutes to create a Kapsule cluster",
     "    whose nodes are billed at these very same VM prices. There is no money in it, only delay.",
     "k3s enforces NetworkPolicy through an embedded kube-router controller (flannel alone does not),",
-    "which lesson 6 depends on — and which 60-k8s.sh ASSERTS rather than assumes, because a CNI that",
+    "which lesson 1.3.1 depends on — and which 60-k8s.sh ASSERTS rather than assumes, because a CNI that",
     "accepts a NetworkPolicy object and silently ignores it is this repo's characteristic failure.",
     "",
     "Prices are read live from the Scaleway catalogue by lib.sh — never hardcoded here, because a",
     "stale price in a cost warning is worse than no price."
   ],
 
-  "lesson-01-no-sandbox": {
+  "1.1.1": {
     "kind": "vm",
     "type": "PLAY2-NANO",
     "image": "ubuntu_noble",
@@ -78,31 +78,119 @@
     "why": "The bare box IS the lesson. No engine, no runtime — the rogue agent runs as an ordinary host process, which is only acceptable on a machine that is destroyed minutes later."
   },
 
+  "chapter-01-audit": {
+    "kind": "vm",
+    "type": "PLAY2-MICRO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 20,
+    "substrates": ["chapter-1-audit/10-auditd"],
+    "why": "NOT a lesson — the small box lesson 2.1.1 runs on to AUDIT the no-sandbox baseline (1.1.1). It carries only host auditd: on the no-sandbox rung there is no boundary between the attack's syscall and the kernel that records it, so the host sensor sees essentially everything — the counterpoint to the NO_SENSOR wall every phase-1 rung shows. A separate box from 1.1.1 by the co-residency rule (a host sensor taxes syscall_ms), though here 1.1.1 measures no cost, so it is really just tidiness. PLAY2-MICRO because auditd is light and the suite runs as a bare process."
+  },
+
+  "2.1.1": {
+    "box": "chapter-01-audit",
+    "why": "Audits 1.1.1. Runs the SAME nine attacks as a bare host process, then reads auditd's trail and reports, per attack, whether it was written down. The finding: near-everything is LOGGED — full observability on the rung with zero isolation, which is why phase 2 exists to show the trade runs backwards up the ladder."
+  },
+
+  "chapter-02-audit-host": {
+    "kind": "vm",
+    "type": "PRO2-XS",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 40,
+    "substrates": ["chapter-2/10-podman", "chapter-2/20-runsc", "chapter-2/30-containerd-kata", "chapter-2-audit/tetragon", "chapter-2-audit/kata-debug-kernel"],
+    "why": "NOT a lesson — the chapter-2 AUDIT box. Its own box, not chapter-02-host, by the co-residency rule: a host eBPF sensor (Tetragon) taxes syscall_ms, so it must not share a machine with a phase-1 lesson whose cost it would corrupt. Carries rootless podman (to run the same hardened container 1.2.1 does), gVisor's runsc (the boundary 2.2.2 audits), containerd + kata-static for kata-qemu (the boundary 2.2.3 audits), Tetragon on its CO-RE eBPF probe (the host kernel sensor, PINNED at v1.7.0 — a sensor whose event schema moved under a lesson rots that lesson silently), and the kata-debug-kernel enablement that makes the BTF/AUDITSYSCALL debug kernel selectable per-run via annotation (2.2.3's in-guest sensor). 2.2.1 runs the attack container while Tetragon watches; 2.2.2 runs it under runsc and shows the host sensor go blind while gVisor's own trace still sees; 2.2.3 runs it under Kata, shows Tetragon go FULLY blind (the guest kernel is not the host's), and recovers coverage only with an in-guest auditd on the debug kernel. PRO2-XS to match the phase-1 host's headroom; the 2 GB Kata guest and the containerd stack fit beside podman/runsc/Tetragon because no NAT guest lives here. Order 10 -> 20 -> 30 -> tetragon -> kata-debug-kernel: runsc's smoke needs podman, 30 restarts containerd, kata-debug-kernel edits the shipped qemu config 30 installed. 2.2.4 is NOT here — it audits OpenShell, whose NAT-guest re-point cannot co-reside with this Tetragon/Kata host, so it keeps its own box (see the 2.2.4 row)."
+  },
+
+  "2.2.1": {
+    "box": "chapter-02-audit-host",
+    "why": "Audits 1.2.1. Runs the SAME suite in the SAME hardened rootless podman container, with Tetragon (host CO-RE eBPF) watching. The finding: a container BLOCKS more than the bare host (1.2.1 is 7/13 vs 3/13) but HIDES no more — Tetragon records the container's syscalls just as auditd recorded the host's, because a container shares the host kernel. Isolation went up; observability did not move. That is the container rung of the backwards-observability ladder."
+  },
+
+  "2.2.2": {
+    "box": "chapter-02-audit-host",
+    "why": "Audits 1.2.2. The turning point of the backwards-observability ladder. Under gVisor the workload's syscalls are intercepted by the sentry (a user-space kernel), so a HOST sensor sees only the sentry's own behaviour, not the app's attacks. gVisor's own trace (runsc --strace / trace session) is the sensor that still sees them — the reframe forced by G2 (Falco >= 0.41 dropped the gVisor event source and Tetragon never had one — no host eBPF sensor can read the sentry's syscalls, whichever one you pick). The finding: coverage survives, but only by switching from a host sensor to a gVisor-native one."
+  },
+
+  "2.2.3": {
+    "box": "chapter-02-audit-host",
+    "why": "Audits 1.2.3. The sharpest rung of the backwards-observability ladder. Under Kata the workload runs in a per-container VM with its OWN guest kernel, so the host eBPF sensor (2.2.1's Tetragon) is FULLY blind — it never sees a single one of the attacks, because the syscalls cross the guest kernel, not the host's. Where 2.2.2 recovered coverage by switching to a gVisor-native sensor, here coverage returns only by putting a sensor INSIDE the guest: an auditd on the BTF/AUDITSYSCALL debug kernel (G1), delivered by an audit-lesson-local image derived FROM the shared agent image so the attack code stays byte-identical. The finding: a stronger isolation boundary hides MORE, and the sensor has to move into the guest with the workload."
+  },
+
+  "2.2.4": {
+    "kind": "vm",
+    "type": "PLAY2-MICRO",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 40,
+    "substrates": ["chapter-2/50-nat-vm", "chapter-2/40-openshell", "chapter-2-audit/auditd-guest"],
+    "why": "Audits 1.2.4 (OpenShell on ordinary runc). Its OWN box, NOT chapter-02-audit-host, for the same hard reason 1.2.4 keeps its own: OpenShell's rootless-podman driver refuses a public default route, so 50-nat-vm builds a Debian-13 NAT guest and up.sh re-points the box terminally into it — a relocation the Tetragon/Kata audit host cannot ride along on. Same two substrates as 1.2.4 plus chapter-2-audit/auditd-guest, which lands INSIDE the guest (it runs after the re-point). THE MEASURED RESULT (2026-08-15, reproduced from scratch twice): two disjoint sensors write down 15/19 attacks. Unlike 2.2.3 (host sensor read ZERO behind Kata's guest kernel), OpenShell is runc so the workload's syscalls reach the in-guest auditd, which catches 8 local/kernel attacks — read_credentials, plant_backdoor, sys_module_count, kallsyms_readable, bpf, io_uring_setup, perf_event_open, malicious_package (matched by the workload-unique PATH each opens, or the keyed syscall for the kernel probes; the capability-denied bpf/io_uring/perf ARE recorded because a syscall that returns EPERM still exits and the audit hook fires). OCSF catches the 8 network attacks by binary/method/endpoint; malicious_package is the one both see. The lesson PLANTS canaries (PLANT_FAKE_SECRETS=1) so the credential theft touches real files and is auditable — which is why read_credentials shows reached here (containment 15/19 vs 1.2.4's 16/19). The ONLY attack neither sensor catches is fs_policy_write — a write to /etc the filesystem policy DENIES before it resolves to a record: a host auditor sees what the workload DID, not what the boundary DENIED, and that decision lives only in OpenShell's policy engine. auditd-guest.sh sets log_format=RAW (ENRICHED breaks the type=PATH grep) and max_log_file=500 AND RESTARTS auditd to apply them (enable --now does not restart a running daemon; the 8 MB default rotated mid-run and dropped the sensitive records — the cause of a since-fixed intermittency, now asserted by check.sh). PLAY2-MICRO and 40 GB match 1.2.4: the NAT guest needs /dev/kvm and disk, and auditd is light."
+  },
+
+  "chapter-03-audit-k8s": {
+    "kind": "vm",
+    "type": "PRO2-S",
+    "image": "ubuntu_noble",
+    "root_volume_gb": 80,
+    "substrates": ["chapter-3/60-k8s", "chapter-3-audit/k8s-api-audit", "chapter-3/70-k8s-gvisor", "chapter-3-audit/72-k8s-gvisor-trace", "chapter-3/75-k8s-devmapper", "chapter-3/80-k8s-kata", "chapter-3-audit/85-kata-debug-kernel", "chapter-3/90-k8s-openshell", "chapter-3-audit/tetragon"],
+    "why": "NOT a lesson — the chapter-3 AUDIT cluster lessons 2.3.1, 2.3.4 and 2.3.6 share (2.3.2/2.3.3/2.3.5 join it once their SPIKE sensor substrates land — the gVisor runsc-trace bridge and the Kata privileged-sidecar). Its OWN k3s box, not chapter-03-k8s, by the co-residency rule: a host eBPF sensor (Tetragon) taxes syscall_ms, so it must not share a machine with a phase-1 lesson whose cost it would corrupt. It carries the same four runtimeClassName boundaries chapter-03-k8s does (none / gvisor / kata-qemu / kata-fc) PLUS two audit sensors: Tetragon on its CO-RE eBPF probe (the host kernel sensor 2.3.1 and 2.3.4 read) and k8s API audit (the CONTROL-PLANE sensor that names the service-account-token read and exec-into-pod — the attacks no syscall tracer sees, because they never touch the kernel). ORDER IS LOAD-BEARING and it is about restarts, not files: 60 starts k3s (no restart), k8s-api-audit adds apiserver audit flags (a restart), 70 and 75 restart k3s for the gVisor runtime and the devmapper snapshotter — ALL before 80, because a k3s restart after 80 terminates the kata-deploy DaemonSet pod, which reverts its own install on the way out. 90 (OpenShell) and tetragon run last and restart nothing: the tetragon substrate installs the binary, writes the policy and then DISABLES the shipped systemd unit (the lesson starts its own capture window), and 90 touches only systemctl --user. TETRAGON IS CONFIGURED EXACTLY AS CHAPTER 2 CONFIGURES IT — no --enable-k8s-api, measured 2026-08-15: the flag switches on a TracingPolicy CRD watcher the release tarball ships no CRDs for (tetragon exits), it never resolves process.pod even with --enable-cri against k3s's containerd socket, and it holds every event up to 30s in the EventCache waiting for pod info that never arrives, which turns a prompt capture window into a trail of false NOT_LOGGED. The leaves attribute events to one named POD by CONTAINER ID instead (process.docker, matched against the pod's own containerID from the k8s API) — stronger than the sensor's enrichment, and it keeps the instrument identical to the rung below. PRO2-S (8 vCPU / 32 GB) and 80 GB match chapter-03-k8s — the resident OpenShell gateway and the Kata guests fit beside Tetragon's probe. check.sh fires the Tetragon and API-audit assertions at provision time, from inside / against the log, never from the flag."
+  },
+
+  "2.3.1": {
+    "box": "chapter-03-audit-k8s",
+    "why": "Audits 1.3.1. Runs the SAME suite in the SAME hardened Pod, with Tetragon (host CO-RE eBPF) watching and the k3s API audit log on. The finding: a Pod is namespaces + cgroups on the node kernel, so Tetragon sees straight through it exactly as it saw the container in 2.2.1 — isolation was composed by the cluster, observability did not move. What the CLUSTER adds is one sensor no syscall tracer has: the apiserver audit log names the service-account-token read (k8s_sa_token), an attack that lives above the kernel entirely and is invisible to Tetragon. Two sensors, two columns — host syscalls and the control plane. TWO of 1.3.1's controls are deliberately OFF and only these two — automountServiceAccountToken is left at the cluster's default TRUE, and the NetworkPolicy gets one extra clause for the apiserver — because a sensor cannot record an attack the boundary stopped from ever being attempted (the same reason 2.2.4 plants canary credentials). Containment therefore reads one lower than 1.3.1's, and the lesson says so. Events are attributed to the attack pod by CONTAINER ID rather than pid namespace: the gateway pod is alive in the same namespace during the capture, and a pid-namespace test cannot tell the two apart."
+  },
+
+  "2.3.2": {
+    "box": "chapter-03-audit-k8s",
+    "why": "Audits 1.3.2. The turning point of the backwards-observability ladder, on the cluster. Under gVisor the workload's syscalls are serviced by the SENTRY — a user-space kernel — so a host eBPF probe is attached to the wrong kernel. That is discovery gate G2, which FAILED as originally specified: Falco removed its gVisor event source in 0.41 and Tetragon never had one, so there is no host-sensor path here whichever tool you pick. The sensor that still sees the attacks is gVisor's OWN: the `gvisor-trace` RuntimeClass (substrate chapter-3-audit/72-k8s-gvisor-trace) selects a runsc configured with --strace, and the sentry writes every syscall the application made to its boot log. Runs Tetragon alongside anyway and reports its column as MEASURED rather than asserted — anything a host sensor records at this rung is the sentry's or the gofer's behaviour ON BEHALF of the app, never the app's own calls, which is a weaker thing wearing the same name. A SECOND RuntimeClass rather than tracing the `gvisor` class 1.3.2 uses, because strace costs real time per syscall and would tax that lesson's syscall_ms.",
+    "_note": "the phase-1 twin 1.3.2 lives on chapter-03-k8s; this leaf is on the audit box by the co-residency rule"
+  },
+
+  "2.3.3": {
+    "box": "chapter-03-audit-k8s",
+    "why": "Audits 1.3.3, and it is where the syllabus's G1 reframe gets CORRECTED on measurement. 2.3.6 showed the host sensor reads 0 behind Kata's guest kernel; this leaf recovers the coverage with a privileged SIDECAR in the same pod — the same VM, because a Kata sandbox is per-pod. What the plan predicted was that the Kubernetes construct would let that sidecar run a KERNEL-SIDE sensor (auditd/eBPF) using 'the guest's init context'. Measured 2026-08-15: it does not. privileged:true + runAsUser:0 + a full CapEff (000001ffffffffff) + hostPID:true still get EPERM from the guest's audit netlink, because the kernel gates it on the INITIAL pid namespace and Kata's agent puts the whole pod in a child one — hostPID under Kata means 'the sandbox', not 'the VM's init'. What DOES work is a ptrace tracer, which needs no netlink and no initial namespace, and which Kubernetes enables with shareProcessNamespace:true (one pid namespace for every container in the pod, inside the guest). That is the thing nerdctl could not offer in 2.2.3 — there one container is one VM and there is nothing to share — so Kubernetes does rescue the rung, just not the way predicted. The sidecar also LOADS a real eBPF program and finds BTF present on the debug kernel (substrate chapter-3-audit/85-kata-debug-kernel), so the guest kernel would host a kernel-side sensor: the obstacle is that audit is namespace-fenced and eBPF is not. The cost worth carrying away: this coverage is PER-POD — the sensor ships in every workload's pod spec, and a pod that forgets the sidecar is as dark as 2.3.6."
+  },
+
+  "2.3.4": {
+    "box": "chapter-03-audit-k8s",
+    "why": "Audits 1.3.4 (OpenShell's kubernetes driver on ordinary runc). Two disjoint sensors as in 2.2.4 — OCSF (OpenShell's L7 trail) for the network attacks and a HOST sensor for the local ones — but here the host sensor is Tetragon (OpenShell is runc, so the sandbox pod's syscalls reach the node kernel Tetragon watches, the mirror of 2.2.4's in-guest auditd), plus the k3s API audit for the control-plane column. Plants canaries (PLANT_FAKE_SECRETS=1) so the credential theft touches real files and is auditable, as 2.2.4 does — which shows read_credentials reached where 1.3.4 showed it contained. The finding stays 2.2.4's: full coverage is the union of sensors with disjoint blind spots, and the one decision only OpenShell's policy engine writes down is the write it DENIED (fs_policy_write), which no host syscall auditor sees."
+  },
+
+  "2.3.5": {
+    "box": "chapter-03-audit-k8s",
+    "why": "Audits 1.3.5 (OpenShell over gVisor — the composition whose Landlock clause silently disappears). Two sensors with disjoint blind spots and NO host sensor between them: OCSF for the network attacks, and gVisor's own sentry trace (the `gvisor-trace` RuntimeClass, selected per sandbox with the same driver-config overlay 1.3.5 uses) for the local ones. This is 2.3.4's stack with the runtime swapped, so what moves, moved because of gVisor. The audit finding that makes this leaf matter more than its scorecard: 1.3.5 measured that gVisor drops Landlock and that the loss is MASKED — fs_policy_write stays blocked by the read-only rootfs, so the containment card is identical to the safe stack and the audit trail is the only witness. Here that witness is read directly: OpenShell's own HIGH `landlock-unavailable` finding is in the OCSF trail, which is the whole argument for auditing a boundary rather than only scoring it.",
+    "_note": "the phase-1 twin 1.3.5 lives on chapter-03-k8s; this leaf is on the audit box by the co-residency rule"
+  },
+
+  "2.3.6": {
+    "box": "chapter-03-audit-k8s",
+    "why": "Audits 1.3.6 (OpenShell over Kata). OCSF survives the guest boundary because it is an L7 proxy in the gateway, not a syscall sensor — so the network attacks are still written down even though a host sensor (Tetragon, 2.3.4) goes FULLY blind behind the guest kernel, exactly as it did in 2.2.3. That is the one sensor that survives every rung of the ladder, and the price of surviving is that it sees network attacks only. The local attacks are dark to any host sensor at this rung; recovering them needs a sensor INSIDE the guest (the privileged sidecar 2.3.3 stands up), which this leaf names as the disjoint blind spot rather than standing that sidecar up a second time. Same driver-config runtimeClassName overlay as 1.3.6, so the composition is one flag from 2.3.4."
+  },
+
   "chapter-02-host": {
     "kind": "vm",
     "type": "PRO2-XS",
     "image": "ubuntu_noble",
     "root_volume_gb": 60,
     "substrates": ["chapter-2/10-podman", "chapter-2/20-runsc", "chapter-2/30-containerd-kata", "chapter-2/35-containerd-devmapper"],
-    "why": "NOT a lesson — the one host lessons 2, 3 and 4 share. It carries the chapter's host-side boundaries side by side — podman with crun as the untouched default (10), runsc as an opt-in podman runtime (20), containerd + kata-static for kata-qemu (30), and the devmapper snapshotter that makes kata-fc real (35) — so each lesson measures its own boundary on a machine where the alternatives are installed and provably working beside it, the same argument chapter-03-k8s makes for the runtimeClassName menu. check.sh fires all four assertions at provision time. ORDER 10 -> 20 -> 30 -> 35: 20's smoke test needs podman installed, and 35 restarts containerd so it must follow 30. Nothing here has chapter 3's revert-on-restart trap — kata-static is files on disk, not a DaemonSet that undoes itself. WHY LESSON 5 IS NOT HERE: OpenShell's rootless-podman driver needs a genuinely private PRIMARY address on the default-route interface, which no Scaleway box has — so its box builds a Debian-13 NAT guest (50-nat-vm) and up.sh re-points the box's .state at that guest, terminally, after which every ssh and rsync for the box lands inside the guest. Host-level lessons cannot ride along on a box that has been relocated like that, so lesson 5 keeps its own; see its `why` and substrates/README.md. PRO2-XS (4 vCPU / 16 GB) because no NAT guest lives here, so the 2 GB Kata guest and the containerd/buildkit stack fit with headroom — a type purchasable since the account's identity verification lifted the quota that had pinned everything above PLAY2-MICRO at 0/0. 60 GB because the Kata stack measured 9.3 GB and 35 adds a 20 GB thin-pool data file plus 2 GB of metadata beside it: SPARSE and thin-provisioned, so a ceiling rather than disk spent, but the volume has to be able to honour it."
+    "why": "NOT a lesson — the one host lessons 1.2.1, 1.2.2 and 1.2.3 share. It carries the chapter's host-side boundaries side by side — podman with crun as the untouched default (10), runsc as an opt-in podman runtime (20), containerd + kata-static for kata-qemu (30), and the devmapper snapshotter that makes kata-fc real (35) — so each lesson measures its own boundary on a machine where the alternatives are installed and provably working beside it, the same argument chapter-03-k8s makes for the runtimeClassName menu. check.sh fires all four assertions at provision time. ORDER 10 -> 20 -> 30 -> 35: 20's smoke test needs podman installed, and 35 restarts containerd so it must follow 30. Nothing here has chapter 3's revert-on-restart trap — kata-static is files on disk, not a DaemonSet that undoes itself. WHY LESSON 1.2.4 IS NOT HERE: OpenShell's rootless-podman driver needs a genuinely private PRIMARY address on the default-route interface, which no Scaleway box has — so its box builds a Debian-13 NAT guest (50-nat-vm) and up.sh re-points the box's .state at that guest, terminally, after which every ssh and rsync for the box lands inside the guest. Host-level lessons cannot ride along on a box that has been relocated like that, so lesson 1.2.4 keeps its own; see its `why` and substrates/README.md. PRO2-XS (4 vCPU / 16 GB) because no NAT guest lives here, so the 2 GB Kata guest and the containerd/buildkit stack fit with headroom — a type purchasable since the account's identity verification lifted the quota that had pinned everything above PLAY2-MICRO at 0/0. 60 GB because the Kata stack measured 9.3 GB and 35 adds a 20 GB thin-pool data file plus 2 GB of metadata beside it: SPARSE and thin-provisioned, so a ceiling rather than disk spent, but the volume has to be able to honour it."
   },
 
-  "lesson-02-container": {
+  "1.2.1": {
     "box": "chapter-02-host",
     "why": "Runs on the shared chapter-2 host. Rootless podman on the host's own kernel — the rung every later boundary is measured against. The unprivileged `agent` user is created by cloud-init and is load-bearing: rootless is the claim this lesson makes, and a Scaleway VM otherwise logs in as root. The default runtime stays crun on a host where runsc and Kata are installed beside it (20-runsc registers gVisor strictly opt-in), so the baseline is a deliberate abstention from the menu rather than the only thing installed."
   },
 
-  "lesson-03-container-gvisor": {
+  "1.2.2": {
     "box": "chapter-02-host",
-    "why": "Runs on the shared chapter-2 host. `--runtime runsc` chosen from a menu that also holds crun and Kata — the same one-flag selection lesson 7 makes with runtimeClassName, which is only meaningful because the alternatives answer beside it. runsc is user-space and needs no hardware feature; registered as an opt-in podman runtime so the default stays crun and Part 3 can re-run the previous rung on the same box."
+    "why": "Runs on the shared chapter-2 host. `--runtime runsc` chosen from a menu that also holds crun and Kata — the same one-flag selection lesson 1.3.2 makes with runtimeClassName, which is only meaningful because the alternatives answer beside it. runsc is user-space and needs no hardware feature; registered as an opt-in podman runtime so the default stays crun and Part 3 can re-run the previous rung on the same box."
   },
 
-  "lesson-04-container-kata": {
+  "1.2.3": {
     "box": "chapter-02-host",
     "why": "Runs on the shared chapter-2 host, whose /dev/kvm and /dev/vhost-vsock it needs. `--runtime io.containerd.kata.v2` boots a real guest kernel on the same machine where podman's crun and gVisor's runsc are working rungs, and 35 gives the same runtime a SECOND hypervisor (Firecracker), which needs the devmapper snapshotter because Firecracker has virtio-block and no virtio-fs — the container rootfs has to arrive as a block device. Read from inside, that is the whole difference: rootfs=virtiofs under kata-qemu, rootfs=ext4 under kata-fc."
   },
 
-  "lesson-05-container-openshell": {
+  "1.2.4": {
     "kind": "vm",
     "type": "PLAY2-MICRO",
     "image": "ubuntu_noble",
@@ -117,42 +205,42 @@
     "image": "ubuntu_noble",
     "root_volume_gb": 80,
     "substrates": ["chapter-3/60-k8s", "chapter-3/70-k8s-gvisor", "chapter-3/75-k8s-devmapper", "chapter-3/80-k8s-kata", "chapter-3/90-k8s-openshell"],
-    "why": "NOT a lesson — the k3s cluster lessons 6, 7, 8 and 9 all share. It carries the four boundaries a workload selects with `runtimeClassName` (none / gvisor / kata-qemu / kata-fc) so that field is a real choice from a menu rather than the only runtime installed: measured 2026-08-13, one node served kernel 6.8.0-106-generic to a plain pod, 4.19.0-gvisor to a gVisor pod and guest 6.18.35 to a Kata pod, and installing Kata did NOT make it the default. 75 adds the devmapper snapshotter, which is what makes `kata-fc` — a class kata-deploy has always registered here and which has never worked — actually run: Firecracker has virtio-block and no virtio-fs, so a container rootfs must arrive as a BLOCK device, and without the snapshotter a kata-fc pod dies at sandbox creation with `snapshotter must be provided to unpack`. It configures no per-runtime snapshotter and must not: kata-deploy already writes `snapshotter = \"devmapper\"` on kata-fc and on nothing else, so kata-qemu stays on overlayfs and the split comes free and correct from upstream. ORDER IS LOAD-BEARING and it is about restarts, not files: 70 and 75 both run `systemctl restart k3s`, and nothing may restart k3s after 80, because a restart terminates the kata-deploy DaemonSet pod and that pod reverts its own install on termination. 75 sits between them for exactly that reason — loading a snapshotter needs containerd restarted, k3s embeds containerd, and there is no post-80 seam to do it in. 90 runs LAST and must not restart k3s — and it does not: it touches only `systemctl --user` openshell services, so kata-deploy survives it, which check.sh proves by booting a Kata guest after every substrate has run. 80 GB (up from 60) for 75's 25 GB thin-pool data file plus 2 GB of metadata; both are SPARSE and thin-provisioned, so that is a ceiling rather than disk spent — the OpenShell gateway image adds little beside it. LESSON 9 SHARES THIS NODE since 2026-08-13: the account's identity verification lifted the quota that had pinned every type above PLAY2-MICRO at 0/0, which was the only reason it sat on its own box. PRO2-S (8 vCPU / 32 GB) carries the resident OpenShell gateway and agent-sandbox controller beside lesson 8's Part 3b — repeated Kata guest boots — without the OOM that took the 8 GB node down."
+    "why": "NOT a lesson — the k3s cluster lessons 1.3.1, 1.3.2, 1.3.3 and 1.3.4 all share. It carries the four boundaries a workload selects with `runtimeClassName` (none / gvisor / kata-qemu / kata-fc) so that field is a real choice from a menu rather than the only runtime installed: measured 2026-08-13, one node served kernel 6.8.0-106-generic to a plain pod, 4.19.0-gvisor to a gVisor pod and guest 6.18.35 to a Kata pod, and installing Kata did NOT make it the default. 75 adds the devmapper snapshotter, which is what makes `kata-fc` — a class kata-deploy has always registered here and which has never worked — actually run: Firecracker has virtio-block and no virtio-fs, so a container rootfs must arrive as a BLOCK device, and without the snapshotter a kata-fc pod dies at sandbox creation with `snapshotter must be provided to unpack`. It configures no per-runtime snapshotter and must not: kata-deploy already writes `snapshotter = \"devmapper\"` on kata-fc and on nothing else, so kata-qemu stays on overlayfs and the split comes free and correct from upstream. ORDER IS LOAD-BEARING and it is about restarts, not files: 70 and 75 both run `systemctl restart k3s`, and nothing may restart k3s after 80, because a restart terminates the kata-deploy DaemonSet pod and that pod reverts its own install on termination. 75 sits between them for exactly that reason — loading a snapshotter needs containerd restarted, k3s embeds containerd, and there is no post-80 seam to do it in. 90 runs LAST and must not restart k3s — and it does not: it touches only `systemctl --user` openshell services, so kata-deploy survives it, which check.sh proves by booting a Kata guest after every substrate has run. 80 GB (up from 60) for 75's 25 GB thin-pool data file plus 2 GB of metadata; both are SPARSE and thin-provisioned, so that is a ceiling rather than disk spent — the OpenShell gateway image adds little beside it. LESSON 1.3.4 SHARES THIS NODE since 2026-08-13: the account's identity verification lifted the quota that had pinned every type above PLAY2-MICRO at 0/0, which was the only reason it sat on its own box. PRO2-S (8 vCPU / 32 GB) carries the resident OpenShell gateway and agent-sandbox controller beside lesson 1.3.3's Part 3b — repeated Kata guest boots — without the OOM that took the 8 GB node down."
   },
 
-  "lesson-06-k8s": {
+  "1.3.1": {
     "box": "chapter-03-k8s",
     "why": "Runs on the shared cluster. The plain Pod rung: no runtimeClassName at all, which on a cluster where gvisor and kata-qemu are both registered is a deliberate abstention rather than an absence — kata-deploy does not make Kata the default, so 'the pod runs on the NODE kernel' stays literally true of the thing you ran, and check.sh asserts exactly that before any lesson starts."
   },
 
-  "lesson-07-k8s-gvisor": {
+  "1.3.2": {
     "box": "chapter-03-k8s",
     "why": "Runs on the shared cluster. `runtimeClassName: gvisor` selected from a menu that also holds kata-qemu — which is the whole reason the field exists and the reason this lesson stopped being a box with one runtime on it."
   },
 
-  "lesson-08-k8s-kata": {
+  "1.3.3": {
     "box": "chapter-03-k8s",
     "why": "Runs on the shared cluster. Reads the RuntimeClass list rather than hardcoding a name (kata-deploy registers ~25 and the set moves between releases), then picks kata-qemu — a selection that is only meaningful because gvisor is sitting in the same list."
   },
 
-  "lesson-09-k8s-openshell": {
+  "1.3.4": {
     "box": "chapter-03-k8s",
-    "why": "Runs on the shared cluster. OpenShell is the one chapter-3 boundary NOT selected with `runtimeClassName` — its sandbox pods take their runtime class from the GATEWAY, because `openshell sandbox create` has no such flag — but it is installed on the same node, so the audit/policy axis is measured beside the runtime menu it composes with rather than on different hardware. It shares since 2026-08-13: identity verification lifted the quota that had forced it onto its own 8 GB box, and PRO2-S (32 GB) holds its resident gateway and agent-sandbox controller beside lesson 8's repeated Kata boots — see chapter-03-k8s's `why`. Note what is NOT here: lesson 5's 50-nat-vm. The public-default-route constraint belongs to OpenShell's rootless-podman driver, and the kubernetes driver's sandbox callback is an in-cluster Service on a private ClusterIP."
+    "why": "Runs on the shared cluster. OpenShell is the one chapter-3 boundary NOT selected with `runtimeClassName` — its sandbox pods take their runtime class from the GATEWAY, because `openshell sandbox create` has no such flag — but it is installed on the same node, so the audit/policy axis is measured beside the runtime menu it composes with rather than on different hardware. It shares since 2026-08-13: identity verification lifted the quota that had forced it onto its own 8 GB box, and PRO2-S (32 GB) holds its resident gateway and agent-sandbox controller beside lesson 1.3.3's repeated Kata boots — see chapter-03-k8s's `why`. Note what is NOT here: lesson 1.2.4's 50-nat-vm. The public-default-route constraint belongs to OpenShell's rootless-podman driver, and the kubernetes driver's sandbox callback is an in-cluster Service on a private ClusterIP."
   },
 
-  "lesson-16-compose-gvisor-openshell": {
+  "1.3.5": {
     "box": "chapter-03-k8s",
-    "why": "Runs on the shared cluster. The COMPOSITION lesson, and the tutorial's one place gVisor+OpenShell has a mechanism: OpenShell's kubernetes driver selects the lower runtime per sandbox with a driver-config overlay that lands as the pod's `runtimeClassName: gvisor`. It reuses lesson 9's policy byte-for-byte and swaps only the runtime underneath, so any row that moves moved because of gVisor. The finding is a FAILURE MODE, and measured on OpenShell 0.0.99 a subtle one: gVisor answers ENOSYS to landlock(), so the filesystem clause silently LOSES its Landlock backing (a HIGH `landlock-unavailable` audit finding) — but `fs_policy_write` stays BLOCKED, because this driver also backs the read-only paths with a read-only ROOT FILESYSTEM. So the lost layer is MASKED: the attack outcome matches the safe Kata stack and the audit trail is the only witness. policy-hard.yaml (hard_requirement) makes it fail closed (refuse to start). Asserts `runtimeClassName` from the pod AND the 4.19.0-gvisor kernel from inside — never the flag. THE NEVER-RUN COMBO: reproduced on a live box 2026-08-14, and the prior-art's predicted `flips to ALLOWED` did NOT hold on this OpenShell version — reported, not faked. Chapter 2 cannot host this (rootless podman cannot drive runsc, lesson 14) and chapter 4 cannot (gVisor unsupported on OpenShift, lesson 18). NO OWN HARDWARE ROW — it shares chapter-03-k8s, which already carries gVisor beside runc and Kata."
+    "why": "Runs on the shared cluster. The COMPOSITION lesson, and the tutorial's one place gVisor+OpenShell has a mechanism: OpenShell's kubernetes driver selects the lower runtime per sandbox with a driver-config overlay that lands as the pod's `runtimeClassName: gvisor`. It reuses lesson 1.3.4's policy byte-for-byte and swaps only the runtime underneath, so any row that moves moved because of gVisor. The finding is a FAILURE MODE, and measured on OpenShell 0.0.99 a subtle one: gVisor answers ENOSYS to landlock(), so the filesystem clause silently LOSES its Landlock backing (a HIGH `landlock-unavailable` audit finding) — but `fs_policy_write` stays BLOCKED, because this driver also backs the read-only paths with a read-only ROOT FILESYSTEM. So the lost layer is MASKED: the attack outcome matches the safe Kata stack and the audit trail is the only witness. policy-hard.yaml (hard_requirement) makes it fail closed (refuse to start). Asserts `runtimeClassName` from the pod AND the 4.19.0-gvisor kernel from inside — never the flag. THE NEVER-RUN COMBO: reproduced on a live box 2026-08-14, and the prior-art's predicted `flips to ALLOWED` did NOT hold on this OpenShell version — reported, not faked. Chapter 2 cannot host this (rootless podman cannot drive runsc, lesson 1.2.5) and chapter 4 cannot (gVisor unsupported on OpenShift, lesson 1.4.5). NO OWN HARDWARE ROW — it shares chapter-03-k8s, which already carries gVisor beside runc and Kata."
   },
 
-  "lesson-17-compose-kata-openshell": {
+  "1.3.6": {
     "box": "chapter-03-k8s",
-    "why": "Runs on the shared cluster. The positive half of lesson 16's finding: the SAME OpenShell policy stacked on Kata (`runtimeClassName: kata-qemu`) instead of gVisor, where it HOLDS — `fs_policy_write` stays blocked because a real guest kernel ships Landlock and OpenShell's landlock() call succeeds inside the VM. Part 2 shows hard_requirement STARTS here (the requirement is satisfiable), the mirror of lesson 16's refuse-to-start. Asserts Kata engaged from inside by a guest kernel that DIFFERS from the node's (on k3s it does; lesson 19 on OpenShift must use DMI because there it matches). Same driver-config overlay mechanism as lesson 16, same shared box, so the two compositions are measured on identical hardware one flag apart."
+    "why": "Runs on the shared cluster. The positive half of lesson 1.3.5's finding: the SAME OpenShell policy stacked on Kata (`runtimeClassName: kata-qemu`) instead of gVisor, where it HOLDS — `fs_policy_write` stays blocked because a real guest kernel ships Landlock and OpenShell's landlock() call succeeds inside the VM. Part 2 shows hard_requirement STARTS here (the requirement is satisfiable), the mirror of lesson 1.3.5's refuse-to-start. Asserts Kata engaged from inside by a guest kernel that DIFFERS from the node's (on k3s it does; lesson 1.4.6 on OpenShift must use DMI because there it matches). Same driver-config overlay mechanism as lesson 1.3.5, same shared box, so the two compositions are measured on identical hardware one flag apart."
   },
 
-  "lesson-19-compose-kata-openshell": {
+  "1.4.6": {
     "box": "openshift-sno",
-    "why": "Runs on the shared SNO cluster, like lessons 10-13: its run.sh neither provisions nor destroys (the €0.263/hr box is human-owned; teardown is infra/down.sh openshift-sno). The COMPOSITION on the platform it is sold on — OpenShell over Kata, where Kata is the sandboxed-containers OPERATOR (RuntimeClass `kata`, one class not k3s's 25, per lesson 12) and OpenShell must clear SCC admission (the privileged grant lesson 11 sets up and lesson 13 pays). Selects the runtime with the same driver-config overlay as lessons 16/17 (`runtimeClassName: kata`). Expect fs_policy_write BLOCKED (the operator's guest ships Landlock, so lesson 16's gVisor regression does NOT happen), and assert the VM from INSIDE by DMI=KVM/virtio, never the kernel string — Red Hat builds the guest kernel from the same RHEL base so it matches the node (Trap #12). Same stock ubi9 image and oc-cp suite delivery as lesson 13, because RHCOS has no registry to bake an image into."
+    "why": "Runs on the shared SNO cluster, like lessons 1.4.1–1.4.4: its run.sh neither provisions nor destroys (the €0.263/hr box is human-owned; teardown is infra/down.sh openshift-sno). The COMPOSITION on the platform it is sold on — OpenShell over Kata, where Kata is the sandboxed-containers OPERATOR (RuntimeClass `kata`, one class not k3s's 25, per lesson 1.4.3) and OpenShell must clear SCC admission (the privileged grant lesson 1.4.2 sets up and lesson 1.4.4 pays). Selects the runtime with the same driver-config overlay as lesson 1.3.5/17 (`runtimeClassName: kata`). Expect fs_policy_write BLOCKED (the operator's guest ships Landlock, so lesson 1.3.5's gVisor regression does NOT happen), and assert the VM from INSIDE by DMI=KVM/virtio, never the kernel string — Red Hat builds the guest kernel from the same RHEL base so it matches the node (Trap #12). Same stock ubi9 image and oc-cp suite delivery as lesson 1.4.4, because RHCOS has no registry to bake an image into."
   },
 
   "openshift-sno": {

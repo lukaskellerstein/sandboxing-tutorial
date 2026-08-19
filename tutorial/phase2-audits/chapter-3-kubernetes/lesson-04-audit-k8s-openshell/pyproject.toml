@@ -1,0 +1,13 @@
+[project]
+name = "lesson-04-audit-k8s-openshell"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.3.4: auditing the OpenShell rung on a cluster with Tetragon, OCSF and the apiserver audit log."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs inside the sandbox pod, and this leaf only orchestrates the
+# openshell CLI, kubectl and Tetragon, parsing their output with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

@@ -1,0 +1,13 @@
+[project]
+name = "lesson-02-audit-openshift-scc"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 2.4.2: auditing SCC admission — the one boundary that records what it refused."
+requires-python = ">=3.12"
+# Empty on purpose: the suite runs in the pod, and this leaf only drives `oc` and parses its output
+# with the standard library.
+dependencies = []
+
+[tool.ruff]
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

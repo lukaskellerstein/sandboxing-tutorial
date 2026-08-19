@@ -1,0 +1,18 @@
+[project]
+name = "lesson-02-openshift-scc"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 11: the cluster REFUSES to run an over-privileged agent (SCC admission)."
+requires-python = ">=3.12"
+# Empty on purpose. The lesson drives the cluster's own `oc` binary and parses the JSON lines the
+# pod prints — all standard library. Note the difference from chapters 1-3: this lesson runs on YOUR
+# machine, not on the box, because the box is RHCOS and has no Python environment to run it in.
+dependencies = []
+
+[tool.ruff]
+# Lint/format policy comes from the repo-root ruff.toml (one place to change it). It must be pulled
+# in explicitly: a leaf carrying [tool.ruff] SHADOWS the root rather than merging, so without this
+# line the leaf silently runs ruff's own defaults. Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+# This lesson directory is its own source root, so the sibling scorecard.py and openshift.py sort as
+# first-party imports whether ruff runs here or from the repo root.
+src = ["."]

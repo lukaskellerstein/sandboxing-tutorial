@@ -186,7 +186,7 @@ flowchart TB
     style POLICY fill:#e6f4ea,stroke:#34a853
 ```
 
-The sharpest demonstration in this tutorial is lesson 5's `binary_scoped` probe:
+The sharpest demonstration in this tutorial is lesson 1.2.4's `binary_scoped` probe:
 **the same `curl`, byte for byte, copied to `/tmp`, making the identical
 request — denied.** No kernel-level sandbox can see that difference, by
 construction. A syscall is a syscall.
@@ -208,10 +208,10 @@ Nine attacks, run identically on every rung, on a throwaway Scaleway VM with the
 ### Chapter 2 — one host, 13 scored probes
 
 ```text
-1  no sandbox   ███░░░░░░░░░░   3 / 13
-2  container    ███████░░░░░░   7 / 13
-3  + gVisor     █████████░░░░   9 / 13   <- kernel attacks die here
-4  + Kata       ███████░░░░░░   7 / 13   <- and yet the score DROPS
+1.1.1  no sandbox   ███░░░░░░░░░░   3 / 13
+1.2.1  container    ███████░░░░░░   7 / 13
+1.2.2  + gVisor     █████████░░░░   9 / 13   <- kernel attacks die here
+1.2.3  + Kata       ███████░░░░░░   7 / 13   <- and yet the score DROPS
 ```
 
 > [!warning]
@@ -223,10 +223,10 @@ Nine attacks, run identically on every rung, on a throwaway Scaleway VM with the
 ### Chapter 3 — Kubernetes, 19 scored probes
 
 ```text
-6  k8s hardened  ██████████████░░░░░  14 / 19
-7  + gVisor      ████████████████░░░  16 / 19
-8  + Kata        ██████████████░░░░░  14 / 19
-9  + OpenShell   █████████████████░░  17 / 19
+1.3.1  k8s hardened  ██████████████░░░░░  14 / 19
+1.3.2  + gVisor      ████████████████░░░  16 / 19
+1.3.3  + Kata        ██████████████░░░░░  14 / 19
+1.3.4  + OpenShell   █████████████████░░  17 / 19
 ```
 
 > [!important]
@@ -256,11 +256,11 @@ because the distinction lives in HTTP and a kernel does not read HTTP.
 ## 7. The trap: stacking two boundaries can make you *less* safe
 
 Because OpenShell is a different layer, stacking it on gVisor or Kata is legal.
-The composition is run rather than described — **lesson 16** stacks OpenShell on
-gVisor (and watches Landlock vanish), **lesson 17** stacks it on Kata (where it
-holds), and **lesson 19** proves the Kata case on OpenShift — and the result is the
+The composition is run rather than described — **lesson 1.3.5** stacks OpenShell on
+gVisor (and watches Landlock vanish), **lesson 1.3.6** stacks it on Kata (where it
+holds), and **lesson 1.4.6** proves the Kata case on OpenShift — and the result is the
 most important lesson in the tutorial. Chapters 2 and 4 cannot host the gVisor
-stack and document why (lessons 14, 18).
+stack and document why (lessons 1.2.5, 1.4.5).
 
 ```mermaid
 flowchart TB
@@ -284,7 +284,7 @@ flowchart TB
     style WIN fill:#e6f4ea,stroke:#34a853
 ```
 
-The failure is **silent**, and — measured on OpenShell 0.0.99 (lesson 16) — subtler
+The failure is **silent**, and — measured on OpenShell 0.0.99 (lesson 1.3.5) — subtler
 than "the attack starts succeeding." What actually happens is that Landlock drops
 out, flagged only by a High-severity *"Landlock Filesystem Sandbox Unavailable"*
 line in the audit trail. The write it guarded stays **blocked anyway**, because
@@ -354,15 +354,15 @@ not say the same thing twice:
 
 | | Rung | What it teaches |
 | :-- | :-- | :-- |
-| **Lesson 4** | one host, `nerdctl` | the **mechanism** — one shim binary, a config file that picks the machine, and `--snapshotter devmapper` on the command line |
-| **Lesson 8** | Kubernetes | the **selection** — the whole of that collapses into one `runtimeClassName`, chosen from a menu that also holds `gvisor` |
+| **Lesson 1.2.3** | one host, `nerdctl` | the **mechanism** — one shim binary, a config file that picks the machine, and `--snapshotter devmapper` on the command line |
+| **Lesson 1.3.3** | Kubernetes | the **selection** — the whole of that collapses into one `runtimeClassName`, chosen from a menu that also holds `gvisor` |
 
 > [!important]
 > **Firecracker is not a rung on the ladder, and the lessons prove it rather than
 > asserting it.** Both hypervisors sit on KVM and hand the workload the same guest
 > kernel, so each lesson runs its entire attack suite a second time under
-> Firecracker and diffs the two matrices. **No row moves.** Lesson 4 stays 7/13 and
-> lesson 8 stays 14/19. Swapping the VMM does not change your isolation model.
+> Firecracker and diffs the two matrices. **No row moves.** Lesson 1.2.3 stays 7/13
+> and lesson 1.3.3 stays 14/19. Swapping the VMM does not change your isolation model.
 
 What *does* change is the machine, and it has to be read from inside the guest
 because the kernel string is identical under both:
@@ -434,7 +434,7 @@ Cloud Hypervisor. **OpenShift sandboxed containers ships QEMU and nothing else.*
 The operator (v1.12.1) registers a single RuntimeClass, `kata`, and the guest is a
 QEMU/KVM VM; there is no Firecracker option in the product to select.
 
-So the hypervisor choice lessons 4 and 8 demonstrate **does not exist in chapter
+So the hypervisor choice lessons 1.2.3 and 1.3.3 demonstrate **does not exist in chapter
 4** — not because the chapter skips it, but because the platform does not offer
 it. That is the same principle as the gVisor note below: chapter 4 teaches what
 OpenShift actually ships.
@@ -450,8 +450,8 @@ actually ships.
 
 | Component | Version | Where |
 | :-- | :-- | :-- |
-| OpenShell | 0.0.99 — **alpha**, pin it | lessons 5, 9, 13 |
-| Kata / `kata-deploy` | 4.0.0 | lessons 4, 8, 12 |
+| OpenShell | 0.0.99 — **alpha**, pin it | lessons 1.2.4, 1.3.4, 1.4.4 |
+| Kata / `kata-deploy` | 4.0.0 | lessons 1.2.3, 1.3.3, 1.4.3 |
 | OpenShift | 4.18.49, single node | chapter 4 |
 | Host kernel | 6.8.0-106-generic | Scaleway VM |
 
@@ -463,8 +463,8 @@ Every number on this page was measured by a lesson in this repo and read out of
 its `report.json` — none is hand-entered.
 
 - `syllabus.md` — the source of truth for the lesson list and the scoreboard
-- `tutorial/chapter-2-one-host/lesson-04-container-kata/README.md` — the QEMU-vs-Firecracker
+- `tutorial/phase1-attacks/chapter-2-one-host/lesson-03-container-kata/README.md` — the QEMU-vs-Firecracker
   measurements, and the shim/config mechanism that selects one
-- `tutorial/chapter-2-one-host/lesson-05-container-openshell/README.md` — the five policy probes
+- `tutorial/phase1-attacks/chapter-2-one-host/lesson-04-container-openshell/README.md` — the five policy probes
 - `ATTACKS.md` — what each of the nine attacks actually does
 - `infra/report/overall.py` — builds the cross-lesson matrix from those files

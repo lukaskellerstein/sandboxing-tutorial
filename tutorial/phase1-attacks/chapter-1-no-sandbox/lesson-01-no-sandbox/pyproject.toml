@@ -1,0 +1,17 @@
+[project]
+name = "lesson-01-no-sandbox"
+version = "0.1.0"
+description = "Sandboxing tutorial — lesson 1: the rogue agent with no boundary. The baseline."
+requires-python = ">=3.12"
+# `pip` is a real dependency here, and only here. This is the one lesson that runs the suite as a
+# NATIVE process in its own venv, and attack 5 asks "can this environment install a package?" — a
+# question that needs a package manager present to answer. A `uv` venv ships without pip, so without
+# this the probe reports "pip is missing" and, read carelessly, that looks like the attack was
+# blocked. On every other rung the suite runs inside the agent image, which carries pip already.
+dependencies = ["pip>=25"]
+
+[tool.ruff]
+# Pull in the repo-root policy explicitly — a leaf [tool.ruff] shadows the root rather than merging.
+# Count the dirs: leaf -> chapter -> phase -> tutorial -> repo root.
+extend = "../../../../ruff.toml"
+src = ["."]

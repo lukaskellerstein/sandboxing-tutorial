@@ -30,7 +30,7 @@ on its own disposable box *is* the test.
 That whole cycle is one command, and it destroys the box even when the lesson fails:
 
 ```bash
-cd tutorial/<chapter>/<lesson>
+cd tutorial/<phase>/<chapter>/<lesson>
 ./run.sh                 # provision -> run -> destroy
 ./run.sh --keep          # ...leave the box up, for investigating a failure
 ```

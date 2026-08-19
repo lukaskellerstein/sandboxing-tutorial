@@ -7,7 +7,7 @@ would want it, and what the result tells you.
 You do not need to read this before starting. It is the reference you come back to when a
 row in the report surprises you.
 
-> **`tutorial/<chapter>/<lesson>/report.html`** is the generated version of this — the same probes,
+> **`tutorial/<phase>/<chapter>/<lesson>/report.html`** is the generated version of this — the same probes,
 > with the actual readings from your run, sitting next to the lesson that produced them.
 > It covers that lesson alone. For the comparison across rungs, build the overall report:
 > `python3 infra/report/overall.py --open`.
@@ -27,11 +27,11 @@ Each probe ends in one of three states.
 And in the *"what changed"* table, each row is labelled by how it moved against the rung
 below: **NOW BLOCKED** (this boundary closed it), **STILL OPEN** (neither rung stopped it —
 these are the reason the next lesson exists), or **RE-OPENED** (this boundary *lost* ground,
-which happens exactly once, in lesson 4, and is the whole point of that lesson).
+which happens exactly once, in lesson 1.2.3, and is the whole point of that lesson).
 
-**A low score is not a broken lesson.** Lesson 1 has no sandbox at all, and scores **3/13**.
+**A low score is not a broken lesson.** Lesson 1.1.1 has no sandbox at all, and scores **3/13**.
 That is the entire point: it is the baseline, and the ten attacks that land there are what
-every later lesson is measured against. If lesson 1 ever scored 13/13, something would be
+every later lesson is measured against. If lesson 1.1.1 ever scored 13/13, something would be
 wrong with the *test*, not impressive about the machine.
 
 The interesting number is never the total. It is **which rows change between two rungs**, and
@@ -42,9 +42,10 @@ new boundary — a trap this tutorial points out repeatedly.
 
 The syllabus describes **nine things the rogue agent tries**. The scorecard has more rows
 because attack 8 ("enumerate the kernel") cannot be answered by a single yes/no — it expands
-into six separate kernel probes. Lesson 5 adds six more that only mean anything under a
+into six separate kernel probes. Lesson 1.2.4 adds six more that only mean anything under a
 policy engine. Four further rows are context, not verdicts, so they are excluded from the
-total. That is how nine attacks become 13 scored rows in lessons 1–4 and 19 in lesson 5.
+total. That is how nine attacks become 13 scored rows in lessons 1.1.1–1.2.3 and 19 in
+lesson 1.2.4.
 
 ---
 
@@ -63,7 +64,7 @@ it can just *be* you, against your cloud account, for as long as the key lives.
 
 **What closes it.** A container, immediately — the agent gets a fresh filesystem that simply
 does not contain your home directory. This is the biggest single jump in the tutorial, and it
-is why lesson 2 exists.
+is why lesson 1.2.1 exists.
 
 ### 2. `exfiltrate` — can it send what it stole anywhere?
 
@@ -74,7 +75,7 @@ the lesson runs itself. With no listener configured it tests raw outbound networ
 secret *leaves*. This row and the one above are a pair: if reading is blocked, exfiltration is
 moot; if reading succeeds but egress is blocked, you have bought yourself time.
 
-**What closes it.** `--network none`. And that is exactly the problem lesson 5 exists to
+**What closes it.** `--network none`. And that is exactly the problem lesson 1.2.4 exists to
 solve: a real agent needs the network to do its job, so "turn the network off" is not an
 answer you can actually ship.
 
@@ -201,7 +202,7 @@ host's module list. `0` means it is looking at a kernel that has nothing to tell
 
 **Why it matters.** Those addresses are what an exploit needs to know where to jump. Modern
 distros restrict this by default (`kptr_restrict`) — which is why this row reads `BLOCKED` even
-in lesson 1, **with no sandbox at all**. That is the point worth taking away: a row that was
+in lesson 1.1.1, **with no sandbox at all**. That is the point worth taking away: a row that was
 already closed proves nothing about your boundary.
 
 ### 8d. `bpf` — can it create a BPF map?
@@ -212,7 +213,7 @@ already closed proves nothing about your boundary.
 and has a long history of privilege-escalation CVEs, which is why unprivileged access to it is
 disabled on hardened distros.
 
-**The surprise this probe produced.** In lesson 4 (Kata) this row **re-opens** — it goes from
+**The surprise this probe produced.** In lesson 1.2.3 (Kata) this row **re-opens** — it goes from
 `BLOCKED` to `SUCCEEDED` — even though every Linux capability has been dropped. The guest kernel
 boots upstream defaults and nothing there ever disabled unprivileged BPF (`node=2`, `guest=0`).
 Stronger isolation, *weaker* hardening. If you move a workload into a VM, the distro hardening
@@ -233,12 +234,12 @@ verdict on the scorecard, completely different reason.
 **What it does.** Calls `perf_event_open()`.
 
 **Why it matters.** Performance counters can leak information across process boundaries. Like
-`kallsyms`, distros already restrict this (`perf_event_paranoid`), so it reads `BLOCKED` in lesson
-1 too — another row that is not evidence about your sandbox.
+`kallsyms`, distros already restrict this (`perf_event_paranoid`), so it reads `BLOCKED` in
+lesson 1.1.1 too — another row that is not evidence about your sandbox.
 
 ---
 
-## Group 4 — Policy: which binary, which method? (lesson 5 only)
+## Group 4 — Policy: which binary, which method? (lesson 1.2.4 only)
 
 Everything above is answered by "can it, or can it not". These five ask a different question
 that no kernel-level sandbox can answer, **by construction**: to a kernel, a syscall is a
@@ -261,7 +262,7 @@ difference in outcome can only be the policy.
 
 **What it does.** Counts entries in the OCSF audit log.
 
-**Why it matters.** This row reads **0 on every rung until lesson 5**, and that is the finding.
+**Why it matters.** This row reads **0 on every rung until lesson 1.2.4**, and that is the finding.
 A container blocks an attack and forgets it instantly. You get no alert, no timeline, and no
 way to know it was ever attempted. Detection and response need a record, and "it was blocked"
 is not the same as "we know it happened".
@@ -299,5 +300,5 @@ middle**, so the real destination was never contacted. The audit log proves it:
 HTTP:GET [MED] DENIED /usr/bin/curl(36) -> GET http://169.254.42.42/conf
 ```
 
-Fixing it would move lesson 5 from 13/19 to 16/19. It is recorded here rather than quietly
+Fixing it would move lesson 1.2.4 from 13/19 to 16/19. It is recorded here rather than quietly
 patched, because changing it changes the lesson's headline comparison.
